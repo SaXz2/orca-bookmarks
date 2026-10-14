@@ -43,7 +43,7 @@ npm run build     # 产物在 dist/
 npm run watch     # 开发监听模式
 ```
 
-Chrome → 扩展程序 → 开发者模式 → 加载已解压的扩展程序 → 选择 `dist/`。
+Edge → edge://extensions → 开发者模式 → 加载解压缩的扩展 → 选择 `dist/`。
 
 ## MCP 连接层说明
 
