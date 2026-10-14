@@ -1,26 +1,149 @@
+/**
+ * options.css — 配置页样式（endpoint / MCP Token / repoId + 测试连接）
+ *
+ * 类名规范（BEM：块__元素--修饰符，全项目统一）：
+ *   .options / .options__title
+ *   .options-form / .options-form__field / .options-form__label / .options-form__input
+ *   .options-form__hint / .options-form__actions / .options-form__button
+ *   .options-form__button--primary
+ *   .options-msg / .options-msg--ok / .options-msg--error / .options-msg--warn / .options-msg--pending
+ *
+ * 主题：CSS 变量定义在 :root；暗色双通道——
+ *   prefers-color-scheme: dark（跟随系统）或 :root[data-theme="dark"]
+ *   （供 ?theme=dark 预览/无头截图强制暗色）。
+ */
+
+:root {
+  --options-bg: #ffffff;
+  --options-fg: #1f2328;
+  --options-muted: #6a737d;
+  --options-border: #e1e4e8;
+  --options-accent: #2f6fed;
+  --options-hover-bg: rgba(31, 35, 40, 0.06);
+  --options-ok: #1a7f37;
+  --options-error: #c0392b;
+  --options-warn: #9a6700;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --options-bg: #16181d;
+    --options-fg: #e6e8eb;
+    --options-muted: #8b949e;
+    --options-border: #2d333b;
+    --options-hover-bg: rgba(230, 232, 235, 0.08);
+    --options-ok: #4ac26b;
+    --options-error: #e06c60;
+    --options-warn: #d4a72c;
+  }
+}
+:root[data-theme="dark"] {
+  --options-bg: #16181d;
+  --options-fg: #e6e8eb;
+  --options-muted: #8b949e;
+  --options-border: #2d333b;
+  --options-hover-bg: rgba(230, 232, 235, 0.08);
+  --options-ok: #4ac26b;
+  --options-error: #e06c60;
+  --options-warn: #d4a72c;
+}
+
+* { box-sizing: border-box; }
+
 body {
-  font: 14px/1.6 system-ui, sans-serif;
-  max-width: 480px;
-  margin: 40px auto;
-  padding: 0 16px;
+  margin: 0;
+  padding: 32px 16px;
+  font: 14px/1.6 system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+  background: var(--options-bg);
+  color: var(--options-fg);
 }
 
-label {
+:focus-visible {
+  outline: 2px solid var(--options-accent);
+  outline-offset: 1px;
+}
+
+.options { max-width: 520px; margin: 0 auto; }
+
+.options__title {
+  margin: 0 0 20px;
+  font-size: 20px;
+}
+
+.options-form__field {
   display: block;
-  margin-bottom: 12px;
+  margin-bottom: 16px;
 }
-
-input {
+.options-form__label {
+  display: block;
+  margin-bottom: 4px;
+  font-weight: 600;
+  font-size: 13px;
+}
+.options-form__input {
   display: block;
   width: 100%;
-  padding: 6px 8px;
+  padding: 7px 10px;
+  border: 1px solid var(--options-border);
+  border-radius: 8px;
+  background: var(--options-bg);
+  color: var(--options-fg);
+  font: inherit;
+}
+.options-form__input:focus {
+  outline: 2px solid var(--options-accent);
+  outline-offset: -1px;
+  border-color: transparent;
+}
+.options-form__hint {
+  display: block;
   margin-top: 4px;
-  border: 1px solid #ccc;
-  border-radius: 6px;
+  font-size: 12px;
+  color: var(--options-muted);
 }
 
-.actions { margin-top: 16px; display: flex; gap: 8px; }
-button { padding: 6px 16px; border-radius: 6px; border: 1px solid #ccc; background: #f5f5f5; cursor: pointer; }
-button:hover { background: #eaeaea; }
+.options-form__actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 20px;
+}
+.options-form__button {
+  padding: 7px 20px;
+  border: 1px solid var(--options-border);
+  border-radius: 8px;
+  background: var(--options-hover-bg);
+  color: var(--options-fg);
+  font: inherit;
+  cursor: pointer;
+}
+.options-form__button:hover { border-color: var(--options-muted); }
+.options-form__button:disabled { opacity: 0.55; cursor: wait; }
+.options-form__button--primary {
+  background: var(--options-accent);
+  border-color: var(--options-accent);
+  color: #ffffff;
+}
+.options-form__button--primary:hover { border-color: var(--options-accent); filter: brightness(1.08); }
 
-#msg { margin-top: 12px; color: #2a7; min-height: 1.5em; }
+.options-msg {
+  margin-top: 14px;
+  min-height: 1.6em;
+  font-size: 13px;
+  color: var(--options-muted);
+}
+.options-msg--ok { color: var(--options-ok); }
+.options-msg--error { color: var(--options-error); }
+.options-msg--warn { color: var(--options-warn); }
+.options-msg--pending::before {
+  content: "";
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 6px;
+  vertical-align: -1px;
+  border: 2px solid var(--options-border);
+  border-top-color: var(--options-accent);
+  border-radius: 50%;
+  animation: options-spin 0.8s linear infinite;
+}
+@keyframes options-spin { to { transform: rotate(360deg); } }

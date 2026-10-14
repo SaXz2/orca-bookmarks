@@ -6,14 +6,13 @@
   <link rel="stylesheet" href="popup.css" />
 </head>
 <body>
-  <header>
-    <input id="search" type="search" placeholder="搜索标题 / URL / 标签…" autofocus />
+  <header class="popup-header">
+    <input id="search" class="popup-header__search" type="search" placeholder="搜索标题 / URL / 标签…" autofocus aria-label="搜索标题 / URL / 标签" />
+    <a id="open-options" class="popup-header__options-link" href="#" title="打开配置页" aria-label="打开配置页">⚙</a>
   </header>
-  <div id="status"></div>
-  <main id="list"></main>
-  <footer>
-    <a href="#" id="open-options">⚙ 配置</a>
-  </footer>
+  <nav id="folder-tabs" class="popup-tabs" role="tablist" aria-label="文件夹"></nav>
+  <div id="status" class="popup-status" role="status" aria-live="polite"></div>
+  <main id="list" class="popup-list"></main>
   <script type="module" src="popup.js"></script>
 </body>
 </html>

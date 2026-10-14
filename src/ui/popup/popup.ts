@@ -1,82 +1,228 @@
-/** popup：搜索框 + 文件夹树列表（真实数据：kind:8 搜 http 拉全量链接，按标签/域名分组） */
+/**
+ * popup：搜索框 + 文件夹切换 + 条目卡片列表。
+ * 数据流：loadConfig → loadBookmarkEntries（真实 MCP 数据）。
+ * 分组：只读导入 bookmarks/bookmarkTree 的 classify()（不改逻辑层）。
+ * 文件夹固定为 bilibili / youtube / vimeo / 网址 / other；空文件夹也展示
+ * （@0 拍板 A：「网址」当前 0 条时显示空态）。
+ */
 import { loadBookmarkEntries } from "../../mcp/loader";
 import { loadConfig, isConfigured } from "../../store/config";
-import { buildBookmarkTree } from "../../bookmarks/bookmarkTree";
-import { buildIndex, search } from "../../search/search";
-import { renderCover } from "../cover";
+import { classify } from "../../bookmarks/bookmarkTree";
+import { buildIndex, search, type SearchIndex } from "../../search/search";
+import { renderCover, renderFavicon } from "../cover";
 import type { UrlEntry } from "../../mcp/client";
 
-async function main() {
-  const listEl = document.getElementById("list")!;
-  const searchEl = document.getElementById("search") as HTMLInputElement;
-  const statusEl = document.getElementById("status")!;
+/** 文件夹顺序（与 bookmarkTree 分组规则一致） */
+const FOLDERS = ["bilibili", "youtube", "vimeo", "网址", "other"] as const;
+type FolderId = (typeof FOLDERS)[number];
+type TabId = FolderId | "all";
 
-  const cfg = await loadConfig();
+// ?theme=dark 供预览/无头截图强制暗色
+if (new URLSearchParams(location.search).get("theme") === "dark") {
+  document.documentElement.dataset.theme = "dark";
+}
+
+let entries: UrlEntry[] = [];
+let index: SearchIndex = buildIndex([]);
+let activeTab: TabId = "all";
+let query = "";
+
+function el<T extends HTMLElement>(id: string): T {
+  return document.getElementById(id) as T;
+}
+
+function errMsg(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+/** 状态条：加载中（spinner）/ 未配置（链接）/ 错误（重试按钮） */
+function setStatus(text: string, kind: "" | "loading" | "error" = ""): void {
+  const statusEl = el("status");
+  statusEl.textContent = "";
+  statusEl.className = kind ? `popup-status popup-status--${kind}` : "popup-status";
+  if (text) statusEl.append(text);
+}
+
+async function load(): Promise<void> {
+  el("list").textContent = "";
+  el("folder-tabs").textContent = "";
+  setStatus("加载中…", "loading");
+
+  let cfg;
+  try {
+    cfg = await loadConfig();
+  } catch (err) {
+    setStatus(`配置读取失败：${errMsg(err)}`, "error");
+    const retry = document.createElement("button");
+    retry.type = "button";
+    retry.className = "popup-status__retry";
+    retry.textContent = "重试";
+    retry.addEventListener("click", () => void load());
+    el("status").appendChild(retry);
+    return;
+  }
 
   if (!isConfigured(cfg)) {
-    statusEl.innerHTML = "请先配置 <a href=\"#\" id=\"go-options\">MCP Token / repoId</a>";
-    statusEl.querySelector("#go-options")!.addEventListener("click", (ev) => {
+    setStatus("请先配置 MCP Token / repoId");
+    const link = document.createElement("a");
+    link.className = "popup-status__link";
+    link.href = "#";
+    link.textContent = "去配置 →";
+    link.addEventListener("click", (ev) => {
       ev.preventDefault();
       void chrome.runtime.openOptionsPage();
     });
+    el("status").appendChild(link);
     return;
   }
 
-  statusEl.textContent = "加载中…";
-  let entries: UrlEntry[];
   try {
     entries = await loadBookmarkEntries(cfg);
   } catch (err) {
-    statusEl.textContent = `加载失败：${err instanceof Error ? err.message : String(err)}`;
+    setStatus(`加载失败：${errMsg(err)}`, "error");
+    const retry = document.createElement("button");
+    retry.type = "button";
+    retry.className = "popup-status__retry";
+    retry.textContent = "重试";
+    retry.addEventListener("click", () => void load());
+    el("status").appendChild(retry);
     return;
   }
-  statusEl.textContent = "";
 
-  const index = buildIndex(entries);
+  index = buildIndex(entries);
+  setStatus("");
+  renderTabs();
+  renderList();
+}
 
-  function render(query: string) {
-    listEl.textContent = "";
-    const matched = search(index, query);
-    const folders = buildBookmarkTree(matched);
-    for (const folder of folders) {
-      const fEl = document.createElement("div");
-      fEl.className = "folder";
-      const h = document.createElement("div");
-      h.className = "folder-name";
-      h.textContent = `${folder.name} (${folder.children.length})`;
-      fEl.appendChild(h);
-      for (const node of folder.children) {
-        const e = node.entry;
-        const item = document.createElement("a");
-        item.className = "item";
-        item.href = e.url;
-        item.target = "_blank";
-
-        const cover = document.createElement("div");
-        cover.className = "cover";
-        renderCover(cover, e.cover);
-
-        const title = document.createElement("div");
-        title.className = "item-title";
-        title.textContent = e.title || e.url;
-
-        item.append(cover, title);
-        fEl.appendChild(item);
-      }
-      listEl.appendChild(fEl);
-    }
-    if (!folders.length) {
-      statusEl.textContent = "无匹配结果";
+/** 文件夹 tabs：全部 + 四个固定文件夹，计数基于全量数据（不随搜索变化） */
+function renderTabs(): void {
+  const tabsEl = el("folder-tabs");
+  const counts = new Map<FolderId, number>(FOLDERS.map((f) => [f, 0]));
+  for (const e of entries) {
+    const f = classify(e);
+    if (f === "bilibili" || f === "youtube" || f === "vimeo" || f === "网址" || f === "other") {
+      counts.set(f, (counts.get(f) ?? 0) + 1);
     }
   }
 
-  document.getElementById("open-options")!.addEventListener("click", (ev) => {
+  tabsEl.textContent = "";
+  const mk = (id: TabId, label: string, count: number): void => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "popup-tabs__tab" + (id === activeTab ? " popup-tabs__tab--active" : "");
+    b.setAttribute("role", "tab");
+    b.setAttribute("aria-selected", String(id === activeTab));
+    b.dataset.tab = id;
+    b.textContent = `${label} (${count})`;
+    b.addEventListener("click", () => {
+      activeTab = id;
+      renderTabs();
+      renderList();
+    });
+    tabsEl.appendChild(b);
+  };
+  mk("all", "全部", entries.length);
+  for (const f of FOLDERS) mk(f, f, counts.get(f) ?? 0);
+
+  // tablist 无障碍：左右方向键移动焦点
+  const tabs = [...tabsEl.querySelectorAll<HTMLButtonElement>(".popup-tabs__tab")];
+  tabs.forEach((b, i) => {
+    b.addEventListener("keydown", (ev) => {
+      if (ev.key !== "ArrowRight" && ev.key !== "ArrowLeft") return;
+      ev.preventDefault();
+      const next =
+        ev.key === "ArrowRight" ? (i + 1) % tabs.length : (i - 1 + tabs.length) % tabs.length;
+      tabs[next]!.focus();
+    });
+  });
+}
+
+/** 列表：全部 tab 显示文件夹分组；单个文件夹 tab 显示扁平列表 */
+function renderList(): void {
+  const listEl = el("list");
+  listEl.textContent = "";
+  const matched = search(index, query);
+  const visible =
+    activeTab === "all" ? matched : matched.filter((e) => classify(e) === activeTab);
+
+  if (activeTab === "all") {
+    for (const f of FOLDERS) {
+      listEl.appendChild(renderFolderGroup(f, visible.filter((e) => classify(e) === f)));
+    }
+  } else {
+    for (const e of visible) listEl.appendChild(renderItem(e));
+    if (!visible.length) {
+      listEl.appendChild(renderEmpty(query.trim() ? "无匹配结果" : "该标签下暂无条目"));
+    }
+  }
+}
+
+function renderFolderGroup(folder: FolderId, group: UrlEntry[]): HTMLElement {
+  const wrap = document.createElement("section");
+  wrap.className = "popup-folder";
+  const h = document.createElement("h2");
+  h.className = "popup-folder__header";
+  h.textContent = `${folder} (${group.length})`;
+  wrap.appendChild(h);
+  if (!group.length) {
+    wrap.appendChild(renderEmpty(query.trim() ? "无匹配结果" : "该标签下暂无条目"));
+  }
+  for (const e of group) wrap.appendChild(renderItem(e));
+  return wrap;
+}
+
+function renderEmpty(text: string): HTMLElement {
+  const d = document.createElement("div");
+  d.className = "popup-empty";
+  d.textContent = text;
+  return d;
+}
+
+/** 条目卡片：封面缩略图（无封面用 favicon）+ 标题 + URL，点击新标签打开 */
+function renderItem(e: UrlEntry): HTMLElement {
+  const a = document.createElement("a");
+  a.className = "popup-item";
+  a.href = e.url;
+  a.target = "_blank";
+  a.rel = "noopener";
+
+  const media = document.createElement("div");
+  if (e.cover) {
+    media.className = "popup-item__media";
+    renderCover(media, e.cover);
+  } else {
+    media.className = "popup-item__media popup-item__media--favicon";
+    renderFavicon(media, e.url);
+  }
+
+  const body = document.createElement("div");
+  body.className = "popup-item__body";
+  const title = document.createElement("div");
+  title.className = "popup-item__title";
+  const titleText = e.title || e.url;
+  title.textContent = titleText;
+  title.title = titleText;
+  const url = document.createElement("div");
+  url.className = "popup-item__url";
+  url.textContent = e.url;
+  url.title = e.url;
+  body.append(title, url);
+
+  a.append(media, body);
+  return a;
+}
+
+function boot(): void {
+  el<HTMLInputElement>("search").addEventListener("input", (ev) => {
+    query = (ev.target as HTMLInputElement).value;
+    renderList();
+  });
+  el("open-options").addEventListener("click", (ev) => {
     ev.preventDefault();
     void chrome.runtime.openOptionsPage();
   });
-
-  render("");
-  searchEl.addEventListener("input", () => render(searchEl.value));
+  void load();
 }
 
-main();
+boot();

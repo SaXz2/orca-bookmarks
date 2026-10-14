@@ -1,10 +1,10 @@
 /**
  * 收藏夹文件夹树：网址标签条目 → 文件夹分组。
- * 分组规则（已拍板 2026-10-15）：
- *  1. 标签优先：bilibili > youtube（双标签归 bilibili，首个命中）；
- *  2. 标签全未命中 → 域名兜底：b 站域名 → bilibili，youtube 域名 → youtube；
+ * 分组规则（@0 拍板 + @18 补充标签）：
+ *  1. 标签优先：bilibili > youtube > vimeo > 网址（含子类）> other；
+ *  2. 标签全未命中 → 域名兜底：b 站/vimeo/youtube 域名；
  *  3. 其余 → other。
- * 注意：bilibili/youtube 的真实标签命名待 @12 调研确认，只改 TAG_RULES 一处。
+ * 只改 TAG_RULES / DOMAIN_RULES / FOLDER_ORDER 三处即可调整分组。
  */
 import type { UrlEntry } from "../mcp/client";
 
@@ -23,25 +23,29 @@ export interface FolderNode {
 export type TreeNode = FolderNode | BookmarkNode;
 
 /**
- * 标签规则，顺序即优先级（真实 tag 名来自 @12 调研实测）。
- * 顺序：bilibili > youtube > 网址（双标签归 bilibili，@0 拍板）。
- * 注意：实测当前 网址/哔哩哔哩 标签下 0 条，仅 Youtube 有 2 条；
- * 域名兜底（见 DOMAIN_RULES）实际承担主要分组。
+ * 标签规则，顺序即优先级。
+ * 视频类：bilibili > youtube > vimeo（@18 补充：Vimeo 结构同 Youtube 且有封面）。
+ * 网址类：网址 + 子类（游戏网址/下载网址，@18 补充）。
+ * 双标签归 bilibili（@0 拍板）。
  */
 const TAG_RULES: { folder: string; tag: string }[] = [
   { folder: "bilibili", tag: "哔哩哔哩" },
   { folder: "youtube", tag: "Youtube" },
+  { folder: "vimeo", tag: "Vimeo" },
   { folder: "网址", tag: "网址" },
+  { folder: "网址", tag: "游戏网址" },
+  { folder: "网址", tag: "下载网址" },
 ];
 
 /** 域名兜底规则（标签未命中时） */
 const DOMAIN_RULES: { folder: string; domains: string[] }[] = [
   { folder: "bilibili", domains: ["bilibili.com", "b23.tv"] },
   { folder: "youtube", domains: ["youtube.com", "youtu.be"] },
+  { folder: "vimeo", domains: ["vimeo.com"] },
 ];
 
 /** 文件夹输出顺序 */
-const FOLDER_ORDER = ["bilibili", "youtube", "other"];
+const FOLDER_ORDER = ["bilibili", "youtube", "vimeo", "网址", "other"];
 
 function hasTag(e: UrlEntry, tag: string): boolean {
   return e.tags.some((t) => t.toLowerCase() === tag);

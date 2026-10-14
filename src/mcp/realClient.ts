@@ -135,14 +135,24 @@ export function extractCover(text: string): string | null {
   return m ? m[1]!.trim() : null;
 }
 
-/** 从块文本提取标签（#tag，排除含冒号的非标签如 #哔哩UP：） */
+/**
+ * 从块文本提取标签（#tag）。
+ * 含冒号的（如 #哔哩UP：夏日幻听MCE）也提取冒号后部分进 tags——
+ * 分组不受影响（classify 只查固定标签名），但搜索可覆盖 UP 主名。
+ */
 export function extractTags(text: string): string[] {
   const tags: string[] = [];
   const re = /#([^\s,#]+)/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(text)) !== null) {
     const t = m[1]!;
-    if (!/[:：]/.test(t)) tags.push(t);
+    if (/[:：]/.test(t)) {
+      // #哔哩UP：xxx → 提取冒号后部分（UP 主名）供搜索
+      const afterColon = t.split(/[:：]/).slice(1).join(":").trim();
+      if (afterColon) tags.push(afterColon);
+    } else {
+      tags.push(t);
+    }
   }
   return tags;
 }

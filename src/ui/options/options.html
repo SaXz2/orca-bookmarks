@@ -6,26 +6,29 @@
   <link rel="stylesheet" href="options.css" />
 </head>
 <body>
-  <h1>Orca Bookmarks 配置</h1>
-  <form id="form">
-    <label>
-      MCP 端点
-      <input id="endpoint" type="url" placeholder="http://localhost:18672/mcp" required />
-    </label>
-    <label>
-      MCP Token
-      <input id="token" type="password" placeholder="MCP Token" required />
-    </label>
-    <label>
-      repoId
-      <input id="repoId" type="text" placeholder="笔记库 id" required />
-    </label>
-    <div class="actions">
-      <button type="submit">保存</button>
-      <button type="button" id="test">测试连接</button>
-    </div>
-    <div id="msg"></div>
-  </form>
+  <main class="options">
+    <h1 class="options__title">Orca Bookmarks 配置</h1>
+    <form id="form" class="options-form">
+      <label class="options-form__field">
+        <span class="options-form__label">MCP 端点</span>
+        <input id="endpoint" class="options-form__input" type="url" placeholder="http://localhost:18672/mcp" required />
+      </label>
+      <label class="options-form__field">
+        <span class="options-form__label">MCP Token</span>
+        <input id="token" class="options-form__input" type="password" placeholder="orca-mcp" required autocomplete="off" />
+      </label>
+      <label class="options-form__field">
+        <span class="options-form__label">repoId</span>
+        <input id="repoId" class="options-form__input" type="text" placeholder="iwy5nfalj9l1y" required />
+        <small class="options-form__hint">多个库用英文逗号分隔（逐一查询）；Token 见 orcanote 配置</small>
+      </label>
+      <div class="options-form__actions">
+        <button type="submit" class="options-form__button">保存</button>
+        <button type="button" id="test" class="options-form__button options-form__button--primary">测试连接</button>
+      </div>
+      <div id="msg" class="options-msg" role="status" aria-live="polite"></div>
+    </form>
+  </main>
   <script type="module" src="options.js"></script>
 </body>
 </html>
