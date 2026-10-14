@@ -1,11 +1,10 @@
 /**
  * 收藏夹文件夹树：网址标签条目 → 文件夹分组。
- * 分组规则（任务定义）：
- *  - bilibili 标签条目 → "bilibili" 文件夹
- *  - youtube 标签条目 → "youtube" 文件夹
- *  - 其他笔记库里散落的链接（不属于「网址标签」分类的）→ "other" 文件夹
- * 注意：bilibibili/youtube 的真实标签命名待 @12 调研确认；
- * 分组优先级（同时带 bilibili+youtube 标签时归谁）待任务发起人确认，暂定按 FOLDER_RULES 顺序首个命中。
+ * 分组规则（已拍板 2026-10-15）：
+ *  1. 标签优先：bilibili > youtube（双标签归 bilibili，首个命中）；
+ *  2. 标签全未命中 → 域名兜底：b 站域名 → bilibili，youtube 域名 → youtube；
+ *  3. 其余 → other。
+ * 注意：bilibili/youtube 的真实标签命名待 @12 调研确认，只改 TAG_RULES 一处。
  */
 import type { UrlEntry } from "../mcp/client";
 
@@ -23,23 +22,50 @@ export interface FolderNode {
 
 export type TreeNode = FolderNode | BookmarkNode;
 
-/** 文件夹分组规则，顺序即优先级 */
-export const FOLDER_RULES: { folder: string; match: (e: UrlEntry) => boolean }[] = [
-  { folder: "bilibili", match: (e) => e.tags.some((t) => t.toLowerCase() === "bilibili") },
-  { folder: "youtube", match: (e) => e.tags.some((t) => t.toLowerCase() === "youtube") },
-  // 「网址标签」以外的散落链接 → other（「网址标签」的真实 tag 名待调研确认，暂用占位常量）
-  { folder: "other", match: () => true },
+/** 标签规则，顺序即优先级 */
+const TAG_RULES: { folder: string; tag: string }[] = [
+  { folder: "bilibili", tag: "bilibili" },
+  { folder: "youtube", tag: "youtube" },
 ];
 
-/** 单条目归入哪个文件夹 */
+/** 域名兜底规则（标签未命中时） */
+const DOMAIN_RULES: { folder: string; domains: string[] }[] = [
+  { folder: "bilibili", domains: ["bilibili.com", "b23.tv"] },
+  { folder: "youtube", domains: ["youtube.com", "youtu.be"] },
+];
+
+/** 文件夹输出顺序 */
+const FOLDER_ORDER = ["bilibili", "youtube", "other"];
+
+function hasTag(e: UrlEntry, tag: string): boolean {
+  return e.tags.some((t) => t.toLowerCase() === tag);
+}
+
+function hasDomain(e: UrlEntry, domains: string[]): boolean {
+  try {
+    const host = new URL(e.url).hostname.toLowerCase();
+    return domains.some((d) => host === d || host.endsWith("." + d));
+  } catch {
+    return false; // 非法 URL 不兜底
+  }
+}
+
+/**
+ * 分类：标签全局优先于域名兜底。
+ * 即：任一规则的标签命中 → 按 TAG_RULES 顺序首个命中（双标签归 bilibili）；
+ * 所有标签都未命中 → 再按域名兜底（防止 youtube 标签 + b 站域名的条目被域名规则抢走）。
+ */
 export function classify(e: UrlEntry): string {
-  for (const r of FOLDER_RULES) {
-    if (r.match(e)) return r.folder;
+  for (const r of TAG_RULES) {
+    if (hasTag(e, r.tag)) return r.folder;
+  }
+  for (const r of DOMAIN_RULES) {
+    if (hasDomain(e, r.domains)) return r.folder;
   }
   return "other";
 }
 
-/** 构建文件夹树（文件夹按 FOLDER_RULES 顺序，空文件夹不输出） */
+/** 构建文件夹树（按 FOLDER_ORDER 排序，空文件夹不输出） */
 export function buildBookmarkTree(entries: UrlEntry[]): FolderNode[] {
   const byFolder = new Map<string, BookmarkNode[]>();
   for (const e of entries) {
@@ -47,8 +73,7 @@ export function buildBookmarkTree(entries: UrlEntry[]): FolderNode[] {
     if (!byFolder.has(f)) byFolder.set(f, []);
     byFolder.get(f)!.push({ kind: "bookmark", entry: e });
   }
-  const order = FOLDER_RULES.map((r) => r.folder);
   return [...byFolder.entries()]
-    .sort((a, b) => order.indexOf(a[0]) - order.indexOf(b[0]))
+    .sort((a, b) => FOLDER_ORDER.indexOf(a[0]) - FOLDER_ORDER.indexOf(b[0]))
     .map(([name, children]) => ({ kind: "folder", name, children }));
 }

@@ -63,8 +63,14 @@ export class MockMcpClient implements McpClient {
   }
 }
 
-/** 根据配置创建客户端。真实实现接入后切换到 RealMcpClient。 */
+/** 根据配置创建客户端。默认 Mock；@12 tools/list 落地后切 RealMcpClient（src/mcp/realClient.ts，连接层已就绪）。 */
 export function createMcpClient(cfg: McpConfig): McpClient {
-  // TODO: 等调研报告后切换到 RealMcpClient（src/mcp/realClient.ts）
+  // TODO: 等 @12 调研确认工具签名后切换到 RealMcpClient
   return new MockMcpClient(cfg);
+}
+
+/** 测试连接专用：真实裸 initialize 握手（不依赖查询层） */
+export async function testConnection(cfg: McpConfig): Promise<boolean> {
+  const { RealMcpClient } = await import("./realClient");
+  return new RealMcpClient(cfg).ping();
 }

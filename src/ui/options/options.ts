@@ -1,6 +1,6 @@
 /** options：endpoint / MCP Token / repoId 配置与连接测试 */
 import { loadConfig, saveConfig } from "../../store/config";
-import { createMcpClient } from "../../mcp/client";
+import { testConnection } from "../../mcp/client";
 
 async function main() {
   const endpointEl = document.getElementById("endpoint") as HTMLInputElement;
@@ -33,8 +33,9 @@ async function main() {
   testBtn.addEventListener("click", async () => {
     msgEl.textContent = "测试中…";
     try {
-      const ok = await createMcpClient(currentCfg()).ping();
-      msgEl.textContent = ok ? "连接正常 ✓" : "连接失败：配置不完整";
+      // 裸 initialize 握手：看可达性 + Token 有效性
+      await testConnection(currentCfg());
+      msgEl.textContent = "连接正常 ✓";
     } catch (err) {
       msgEl.textContent = `连接失败：${err instanceof Error ? err.message : String(err)}`;
     }
