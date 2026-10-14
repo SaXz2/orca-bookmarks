@@ -1,0 +1,20 @@
+{
+  "manifest_version": 3,
+  "name": "Orca Bookmarks",
+  "description": "读取虎鲸笔记(OrcaNote) MCP 端点的「网址标签」条目，作为浏览器收藏夹展示，支持搜索与封面预览。",
+  "version": "0.1.0",
+  "permissions": ["storage"],
+  "host_permissions": ["http://localhost/*", "http://127.0.0.1/*"],
+  "action": {
+    "default_title": "Orca Bookmarks",
+    "default_popup": "popup/popup.html"
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "options_ui": {
+    "open_in_tab": true,
+    "page": "options/options.html"
+  }
+}
