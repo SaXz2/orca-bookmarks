@@ -22,10 +22,16 @@ export interface FolderNode {
 
 export type TreeNode = FolderNode | BookmarkNode;
 
-/** 标签规则，顺序即优先级 */
+/**
+ * 标签规则，顺序即优先级（真实 tag 名来自 @12 调研实测）。
+ * 顺序：bilibili > youtube > 网址（双标签归 bilibili，@0 拍板）。
+ * 注意：实测当前 网址/哔哩哔哩 标签下 0 条，仅 Youtube 有 2 条；
+ * 域名兜底（见 DOMAIN_RULES）实际承担主要分组。
+ */
 const TAG_RULES: { folder: string; tag: string }[] = [
-  { folder: "bilibili", tag: "bilibili" },
-  { folder: "youtube", tag: "youtube" },
+  { folder: "bilibili", tag: "哔哩哔哩" },
+  { folder: "youtube", tag: "Youtube" },
+  { folder: "网址", tag: "网址" },
 ];
 
 /** 域名兜底规则（标签未命中时） */

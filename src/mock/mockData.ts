@@ -1,6 +1,9 @@
 import type { UrlEntry } from "../mcp/client";
 
-/** Mock 数据：仅用于开发/演示，真实数据等 MCP 调研落地后接入 */
+/**
+ * Mock 数据：仅用于开发/演示。
+ * 标签名与真实库对齐（@12 调研）：网址 / 哔哩哔哩 / Youtube（Y 大写）。
+ */
 
 export const mockRepos = [
   { id: "repo-1", name: "默认库" },
@@ -13,25 +16,25 @@ export const mockEntries: UrlEntry[] = [
     title: "【4K】虎鲸笔记官方介绍",
     url: "https://www.bilibili.com/video/BV1xx411c7mD",
     cover: "https://i0.hdslb.com/bfs/archive/example1.jpg",
-    tags: ["网址标签", "bilibili"],
+    tags: ["哔哩哔哩"],
     repoId: "repo-1",
     repoName: "默认库",
   },
   {
     id: "e2",
-    title: "How OrcaNote Works - YouTube",
+    title: "How OrcaNote Works - Youtube",
     url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
     cover: "https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg",
-    tags: ["网址标签", "youtube"],
+    tags: ["Youtube"],
     repoId: "repo-1",
     repoName: "默认库",
   },
   {
     id: "e3",
-    title: "", // 空标题条目（防御 UI 崩溃）
+    title: "",
     url: "https://example.com/article-without-title",
     cover: null,
-    tags: ["网址标签"],
+    tags: ["网址"],
     repoId: "repo-2",
     repoName: "收集箱",
   },

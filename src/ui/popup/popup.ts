@@ -1,9 +1,10 @@
-/** popup：搜索框 + 文件夹树列表（当前使用 Mock 数据层，真实数据等 MCP 调研接入） */
-import { createMcpClient } from "../../mcp/client";
-import { loadConfig } from "../../store/config";
+/** popup：搜索框 + 文件夹树列表（真实数据：kind:8 搜 http 拉全量链接，按标签/域名分组） */
+import { loadBookmarkEntries } from "../../mcp/loader";
+import { loadConfig, isConfigured } from "../../store/config";
 import { buildBookmarkTree } from "../../bookmarks/bookmarkTree";
 import { buildIndex, search } from "../../search/search";
 import { renderCover } from "../cover";
+import type { UrlEntry } from "../../mcp/client";
 
 async function main() {
   const listEl = document.getElementById("list")!;
@@ -11,13 +12,20 @@ async function main() {
   const statusEl = document.getElementById("status")!;
 
   const cfg = await loadConfig();
-  const client = createMcpClient(cfg);
+
+  if (!isConfigured(cfg)) {
+    statusEl.innerHTML = "请先配置 <a href=\"#\" id=\"go-options\">MCP Token / repoId</a>";
+    statusEl.querySelector("#go-options")!.addEventListener("click", (ev) => {
+      ev.preventDefault();
+      void chrome.runtime.openOptionsPage();
+    });
+    return;
+  }
 
   statusEl.textContent = "加载中…";
-  let entries: Awaited<ReturnType<typeof client.queryByTag>> = [];
+  let entries: UrlEntry[];
   try {
-    // TODO: 真实实现按「网址标签」tag 全量拉取（tag 名等 @12 调研确认）
-    entries = await client.queryByTag("网址标签");
+    entries = await loadBookmarkEntries(cfg);
   } catch (err) {
     statusEl.textContent = `加载失败：${err instanceof Error ? err.message : String(err)}`;
     return;
