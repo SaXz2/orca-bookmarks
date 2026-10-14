@@ -71,7 +71,7 @@ export function classify(e: UrlEntry): string {
   return "other";
 }
 
-/** 构建文件夹树（按 FOLDER_ORDER 排序，空文件夹不输出） */
+/** 构建文件夹树（按 FOLDER_ORDER 排序，始终输出全部文件夹，空文件夹 children 为空数组） */
 export function buildBookmarkTree(entries: UrlEntry[]): FolderNode[] {
   const byFolder = new Map<string, BookmarkNode[]>();
   for (const e of entries) {
@@ -79,7 +79,9 @@ export function buildBookmarkTree(entries: UrlEntry[]): FolderNode[] {
     if (!byFolder.has(f)) byFolder.set(f, []);
     byFolder.get(f)!.push({ kind: "bookmark", entry: e });
   }
-  return [...byFolder.entries()]
-    .sort((a, b) => FOLDER_ORDER.indexOf(a[0]) - FOLDER_ORDER.indexOf(b[0]))
-    .map(([name, children]) => ({ kind: "folder", name, children }));
+  return FOLDER_ORDER.map((name) => ({
+    kind: "folder" as const,
+    name,
+    children: byFolder.get(name) ?? [],
+  }));
 }

@@ -1,14 +1,14 @@
 /**
  * 真实 MCP 客户端：实现 McpClient 接口，内部走 OrcaMcp 连接层。
  *
- * ⚠ 实测修正（2026-10-15，与 @12 调研报告有出入）：
- * 1. query_blocks 的 description.q 结构是 `{kind:4, name:"标签"}` 直接平铺，
- *    @12 报告里的 `{kind:100, conditions:[...]}` 实测报 invalid_arguments。
- * 2. 标签数据现状：网址=0 条、哔哩哔哩=0 条（所有 repoId 实测），Youtube=2 条。
- *    @12 报告的 23/320 条已不存在。故 queryByTag 保留但不用作数据源。
- * 3. get_blocks_text 返回 {success, repoId, results:[{id, blocks:[...]}]}，
- *    blocks 是树形展开（含 children 子块）。
- * 4. 数据源用 kind:8 文本搜 "http"（raw:true），分页拉全量。
+ * ⚠ query_blocks 参数结构（实测 2026-10-15）：
+ * - 标签查询（嵌套版，✅ 可用）：`{q:{kind:100, conditions:[{kind:4, name:tagName}]}}`
+ * - 文本搜索（平铺版，✅ 可用）：`{q:{kind:8, text:"http", raw:true}}`
+ * - ❌ 标签查询平铺版 `{q:{kind:4, name:tagName}}`：不报错但静默返回 0 条
+ * - ❌ 把 q/kind/name 放到 arguments 顶层：报 invalid_arguments
+ *
+ * ⚠ 标签数据现状（实测）：Youtube=18 条（嵌套版可查），网址/哔哩哔哩=0 条（两版均 0）。
+ * 数据源用 kind:8 文本搜 "http"（raw:true），分页拉全量；域名兜底分组。
  *
  * 坑（@0 要求写进注释）：
  * - totalCount 被 pageSize 截断，不能当总数；分页要拉到 resultIds 长度 < pageSize。
@@ -43,12 +43,14 @@ export class RealMcpClient implements McpClient {
   }
 
   /**
-   * 按标签查询条目（query_blocks kind:4 → get_blocks_text → 解析）。
-   * ⚠ 实测当前标签数据为 0（网址/哔哩哔哩），仅 Youtube 有 2 条。
-   * 保留此方法供交叉校验，数据源用 queryByText。
+   * 按标签查询条目（query_blocks 嵌套版 → get_blocks_text → 解析）。
+   * ⚠ 参数结构：`{q:{kind:100, conditions:[{kind:4, name:tagName}]}}`（嵌套版）。
+   * 平铺版 `{q:{kind:4, name:tagName}}` 不报错但静默返回 0 条。
+   * ⚠ 实测：Youtube=18 条可查；网址/哔哩哔哩=0 条（标签数据可能已变）。
+   * 保留此方法供交叉校验，数据源用 queryByText（kind:8）。
    */
   async queryByTag(tag: string): Promise<UrlEntry[]> {
-    const ids = await this.queryBlockIds({ kind: 4, name: tag });
+    const ids = await this.queryBlockIds(tag);
     if (!ids.length) return [];
     const texts = await this.getBlocksText(this.repoId, ids);
     return parseEntries(texts, this.repoId, this.repoName);
@@ -75,7 +77,7 @@ export class RealMcpClient implements McpClient {
     return this.mcp.listTools();
   }
 
-  /** 内部：query_blocks 通用（q 直接平铺，无 kind:100 包裹） */
+  /** 内部：query_blocks 通用 */
   protected async queryBlocks(
     repoId: string,
     q: Record<string, unknown>,
@@ -89,9 +91,12 @@ export class RealMcpClient implements McpClient {
     return { resultIds: res.resultIds ?? [], totalCount: res.totalCount ?? 0 };
   }
 
-  /** 内部：query_blocks 只取 resultIds */
-  protected async queryBlockIds(condition: Record<string, unknown>): Promise<number[]> {
-    const res = await this.queryBlocks(this.repoId, condition, 1, 2000);
+  /** 内部：按标签名查 block id（嵌套版 kind:100） */
+  protected async queryBlockIds(tagName: string): Promise<number[]> {
+    const res = await this.queryBlocks(this.repoId, {
+      kind: 100,
+      conditions: [{ kind: 4, name: tagName }],
+    }, 1, 2000);
     return res.resultIds;
   }
 }
