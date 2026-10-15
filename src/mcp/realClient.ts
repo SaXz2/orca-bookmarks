@@ -152,22 +152,43 @@ interface RawBlock {
   type?: string;
 }
 
-/** 判断块是否是链接条目：含 markdown 链接，或含 http URL 且非纯本地图片 */
+const IMAGE_EXT_REGEX = /\.(?:jpg|jpeg|png|webp|avif|gif|bmp|svg)(?:\?.*)?$/i;
+
+/** 判断一个 URL 是否是纯图片文件资源（如封面、插图，而非网页书签链接） */
+export function isImageUrl(url: string): boolean {
+  if (IMAGE_EXT_REGEX.test(url)) return true;
+  if (/hdslb\.com\/bfs\/(?:new_dyn|archive|album)\//i.test(url)) return true;
+  return false;
+}
+
+/** 判断块是否是链接条目：排除纯图片块（如 image: http...、![](http...)、或者文本中仅有纯图片文件 URL 的块） */
 export function isLinkBlock(text: string): boolean {
-  if (/\]\((https?:\/\/[^)\s]+)\)/.test(text)) return true;
-  if (/\[([^\]]*)\]\((https?:\/\/[^)]+)\)/.test(text)) return true;
-  if (/(https?:\/\/[^\s),，;；]+)/.test(text)) {
-    // 排除纯本地相对图片引用（如 image: ./PixPin...）
-    if (/^\s*image:\s*\.\//.test(text)) return false;
+  const trimmed = text.trim();
+  // 排除 image: 引导的纯图片块
+  if (/^\s*image:\s*/i.test(trimmed)) return false;
+  // 排除纯 Markdown 图片语法 ![](...)
+  if (/^\s*!\[.*?\]\([^)]+\)\s*$/i.test(trimmed)) return false;
+
+  // 检查 Markdown 链接 [title](url)（跳过以 ! 开头的图片语法）
+  const linkMatches = [...trimmed.matchAll(/(?<!!)(\[([^\]]*)\]\((https?:\/\/[^)\s]+)\))/g)];
+  for (const m of linkMatches) {
+    const url = m[3];
+    if (!isImageUrl(url)) return true;
+  }
+
+  // 检查裸 URL，必须存在至少一个非纯图片的网页 URL
+  const allUrls = trimmed.match(/https?:\/\/[^\s),，;；"]+/g);
+  if (allUrls && allUrls.some((u) => !isImageUrl(u))) {
     return true;
   }
+
   return false;
 }
 
 /**
  * 从文本提取标题与 URL。
- * 1. 优先提取 Markdown 链接：](https?://...)，向前回溯匹配对应层次的 [，完美支持 [[双重括号]标题](url) 或 [标题 [ 内嵌括号 ]](url)。
- * 2. 次优先提取裸 URL 与周围第一行作为标题（如 柯南 #番剧... 或 ZERO-G #动画公司...）。
+ * 1. 优先提取 Markdown 链接：](https?://...)，向前回溯匹配对应层次的 [，完美支持 [[双重括号]标题](url) 或 [标题 [ 内嵌括号 ]](url)。跳过图片语法与图片 URL。
+ * 2. 次优先提取裸 URL 与周围第一行作为标题（如 柯南 #番剧... 或 ZERO-G #动画公司...）。自动过滤图片 URL。
  */
 export function extractTitleUrl(text: string): { title: string; url: string } | null {
   // 1. Markdown 链接回溯解析
@@ -175,6 +196,9 @@ export function extractTitleUrl(text: string): { title: string; url: string } | 
   let match: RegExpExecArray | null;
   while ((match = linkPattern.exec(text)) !== null) {
     const url = match[1];
+    // 如果链接本身是纯图片文件，跳过它，寻找真正的网页链接
+    if (isImageUrl(url)) continue;
+
     const closeBracketIdx = match.index; // ']' 所在位置
     let depth = 0;
     let openBracketIdx = -1;
@@ -189,6 +213,10 @@ export function extractTitleUrl(text: string): { title: string; url: string } | 
       }
     }
     if (openBracketIdx !== -1) {
+      // 检查 [ 前面是否是 !（Markdown 图片语法）
+      if (openBracketIdx > 0 && text[openBracketIdx - 1] === "!") {
+        continue;
+      }
       let title = text.slice(openBracketIdx + 1, closeBracketIdx).trim();
       // 清理前缀未配对的单个 [
       if (title.startsWith("[") && !title.includes("]")) {
@@ -198,35 +226,37 @@ export function extractTitleUrl(text: string): { title: string; url: string } | 
     }
   }
 
-  // 兜底一般 markdown 正则
-  const simpleM = /\[([^\]]*)\]\(([^)]+)\)/.exec(text);
-  if (simpleM) {
+  // 兜底一般 markdown 正则（跳过 ![] 图片与图片 URL）
+  const simpleM = /(?<!!)\[([^\]]*)\]\((https?:\/\/[^)]+)\)/.exec(text);
+  if (simpleM && !isImageUrl(simpleM[2].trim())) {
     return { title: simpleM[1].trim() || simpleM[2].trim(), url: simpleM[2].trim() };
   }
 
-  // 2. 裸 URL 场景：提取 URL，并将周围有效文本作为标题
-  const u = /(https?:\/\/[^\s),，;；]+)/.exec(text);
-  if (u) {
-    const url = u[1];
-    // 寻找标题：在包含 URL 或前面的文本中提取
-    const lines = text.split("\n");
-    for (const line of lines) {
-      let clean = line.replace(/https?:\/\/[^\s),，;；]+/g, "").trim();
-      // 提取标签前的主标题（例如 "ZERO-G #动画公司" 或 "名侦探柯南 #番剧"）
-      if (clean.includes("#")) {
-        clean = clean.split("#")[0].trim();
+  // 2. 裸 URL 场景：提取首个「非纯图片」的网页 URL，并将周围有效文本作为标题
+  const allUrls = text.match(/https?:\/\/[^\s),，;；"]+/g);
+  if (allUrls) {
+    const webUrl = allUrls.find((u) => !isImageUrl(u));
+    if (webUrl) {
+      const lines = text.split("\n");
+      for (const line of lines) {
+        if (/^\s*image:\s*/i.test(line)) continue;
+        let clean = line.replace(/https?:\/\/[^\s),，;；"]+/g, "").trim();
+        // 提取标签前的主标题（例如 "ZERO-G #动画公司" 或 "名侦探柯南 #番剧"）
+        if (clean.includes("#")) {
+          clean = clean.split("#")[0].trim();
+        }
+        // 提取属性冒号前的标题
+        clean = clean.replace(/[a-zA-Z0-9_\u4e00-\u9fa5]+:\s*[^;\n]+;?/g, "").trim();
+        // 取第一个逗号前的词
+        if (clean.includes(",") || clean.includes("，")) {
+          clean = clean.split(/[,，]/)[0].trim();
+        }
+        if (clean && clean.length >= 2 && !clean.toLowerCase().startsWith("image:")) {
+          return { title: clean, url: webUrl };
+        }
       }
-      // 提取属性冒号前的标题
-      clean = clean.replace(/[a-zA-Z0-9_\u4e00-\u9fa5]+:\s*[^;\n]+;?/g, "").trim();
-      // 取第一个逗号前的词
-      if (clean.includes(",") || clean.includes("，")) {
-        clean = clean.split(/[,，]/)[0].trim();
-      }
-      if (clean && clean.length >= 2 && !clean.toLowerCase().startsWith("image:")) {
-        return { title: clean, url };
-      }
+      return { title: webUrl, url: webUrl };
     }
-    return { title: url, url };
   }
 
   return null;

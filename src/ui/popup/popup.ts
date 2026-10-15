@@ -7,6 +7,7 @@
  */
 import { loadBookmarkEntries } from "../../mcp/loader";
 import { loadConfig, isConfigured } from "../../store/config";
+import { loadCachedEntries, saveCachedEntries, loadUiState, saveUiState } from "../../store/cache";
 import { classify, FOLDER_ORDER, type FolderName } from "../../bookmarks/bookmarkTree";
 import { buildIndex, search, type SearchIndex } from "../../search/search";
 import { renderCover, renderFavicon } from "../cover";
@@ -36,8 +37,8 @@ function errMsg(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-/** 状态条：加载中（spinner）/ 未配置（链接）/ 错误（重试按钮） */
-function setStatus(text: string, kind: "" | "loading" | "error" = ""): void {
+/** 状态条：加载中（spinner）/ 同步中 / 未配置（链接）/ 错误（重试按钮） */
+function setStatus(text: string, kind: "" | "loading" | "syncing" | "error" = ""): void {
   const statusEl = el("status");
   statusEl.textContent = "";
   statusEl.className = kind ? `popup-status popup-status--${kind}` : "popup-status";
@@ -45,55 +46,119 @@ function setStatus(text: string, kind: "" | "loading" | "error" = ""): void {
 }
 
 async function load(): Promise<void> {
-  el("list").textContent = "";
-  el("folder-tabs").textContent = "";
-  setStatus("加载中…", "loading");
+  // 1. 本地秒开：并行读取缓存条目与上次操作状态
+  const [cachedEntries, uiState] = await Promise.all([
+    loadCachedEntries(),
+    loadUiState(),
+  ]);
 
+  let hasCached = false;
+  if (cachedEntries && cachedEntries.length > 0) {
+    hasCached = true;
+    entries = cachedEntries;
+    index = buildIndex(entries);
+
+    // 恢复历史浏览状态
+    if (uiState) {
+      if (uiState.activeTab) activeTab = uiState.activeTab as TabId;
+      if (uiState.query) {
+        query = uiState.query;
+        el<HTMLInputElement>("search").value = query;
+      }
+      if (uiState.collapsedFolders) {
+        collapsedFolders.clear();
+        uiState.collapsedFolders.forEach((f) => collapsedFolders.add(f as FolderId));
+      }
+    }
+
+    // 0ms 即时渲染页面
+    renderTabs();
+    renderList();
+
+    if (uiState?.scrollTop) {
+      el("list").scrollTop = uiState.scrollTop;
+    }
+
+    setStatus("后台同步中…", "syncing");
+  } else {
+    // 首次无缓存，展示全量加载骨架态
+    el("list").textContent = "";
+    el("folder-tabs").textContent = "";
+    setStatus("首次加载中…", "loading");
+  }
+
+  // 2. 校验配置
   let cfg;
   try {
     cfg = await loadConfig();
   } catch (err) {
-    setStatus(`配置读取失败：${errMsg(err)}`, "error");
-    const retry = document.createElement("button");
-    retry.type = "button";
-    retry.className = "popup-status__retry";
-    retry.textContent = "重试";
-    retry.addEventListener("click", () => void load());
-    el("status").appendChild(retry);
+    if (!hasCached) {
+      setStatus(`配置读取失败：${errMsg(err)}`, "error");
+      const retry = document.createElement("button");
+      retry.type = "button";
+      retry.className = "popup-status__retry";
+      retry.textContent = "重试";
+      retry.addEventListener("click", () => void load());
+      el("status").appendChild(retry);
+    }
     return;
   }
 
   if (!isConfigured(cfg)) {
-    setStatus("请先配置 MCP Token / repoId");
-    const link = document.createElement("a");
-    link.className = "popup-status__link";
-    link.href = "#";
-    link.textContent = "去配置 →";
-    link.addEventListener("click", (ev) => {
-      ev.preventDefault();
-      void chrome.runtime.openOptionsPage();
-    });
-    el("status").appendChild(link);
+    if (!hasCached) {
+      setStatus("请先配置 MCP Token / repoId");
+      const link = document.createElement("a");
+      link.className = "popup-status__link";
+      link.href = "#";
+      link.textContent = "去配置 →";
+      link.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        void chrome.runtime.openOptionsPage();
+      });
+      el("status").appendChild(link);
+    }
     return;
   }
 
+  // 3. 静默拉取最新数据（不打断用户界面浏览）
   try {
-    entries = await loadBookmarkEntries(cfg);
-  } catch (err) {
-    setStatus(`加载失败：${errMsg(err)}`, "error");
-    const retry = document.createElement("button");
-    retry.type = "button";
-    retry.className = "popup-status__retry";
-    retry.textContent = "重试";
-    retry.addEventListener("click", () => void load());
-    el("status").appendChild(retry);
-    return;
-  }
+    const freshEntries = await loadBookmarkEntries(cfg);
 
-  index = buildIndex(entries);
-  setStatus("");
-  renderTabs();
-  renderList();
+    const isDifferent =
+      !hasCached ||
+      entries.length !== freshEntries.length ||
+      !entries.every(
+        (e, i) =>
+          e.id === freshEntries[i]?.id &&
+          e.title === freshEntries[i]?.title &&
+          e.url === freshEntries[i]?.url,
+      );
+
+    if (isDifferent) {
+      const currentScroll = el("list").scrollTop;
+      entries = freshEntries;
+      await saveCachedEntries(entries);
+      index = buildIndex(entries);
+      renderTabs();
+      renderList();
+      el("list").scrollTop = currentScroll;
+    }
+
+    setStatus("");
+  } catch (err) {
+    if (!hasCached) {
+      setStatus(`加载失败：${errMsg(err)}`, "error");
+      const retry = document.createElement("button");
+      retry.type = "button";
+      retry.className = "popup-status__retry";
+      retry.textContent = "重试";
+      retry.addEventListener("click", () => void load());
+      el("status").appendChild(retry);
+    } else {
+      console.warn("[popup] 后台静默同步失败（沿用缓存数据）：", err);
+      setStatus("");
+    }
+  }
 }
 
 /** 文件夹 tabs：全部 + 四个固定文件夹，计数基于全量数据（不随搜索变化） */
@@ -116,6 +181,7 @@ function renderTabs(): void {
     b.textContent = `${label} (${count})`;
     b.addEventListener("click", () => {
       activeTab = id;
+      void saveUiState({ activeTab });
       renderTabs();
       renderList();
     });
@@ -190,6 +256,7 @@ function renderFolderGroup(folder: FolderId, group: UrlEntry[]): HTMLElement {
       arrow.textContent = "▸";
       h.setAttribute("aria-expanded", "false");
     }
+    void saveUiState({ collapsedFolders: Array.from(collapsedFolders) });
   };
 
   h.addEventListener("click", toggle);
@@ -279,6 +346,7 @@ function renderItem(e: UrlEntry): HTMLElement {
         const sInput = el<HTMLInputElement>("search");
         sInput.value = tag;
         query = tag;
+        void saveUiState({ query });
         renderList();
         sInput.focus();
       });
@@ -292,10 +360,37 @@ function renderItem(e: UrlEntry): HTMLElement {
 }
 
 function boot(): void {
+  let searchTimer: number | undefined;
   el<HTMLInputElement>("search").addEventListener("input", (ev) => {
     query = (ev.target as HTMLInputElement).value;
     renderList();
+    window.clearTimeout(searchTimer);
+    searchTimer = window.setTimeout(() => {
+      void saveUiState({ query });
+    }, 250);
   });
+
+  let scrollTimer: number | undefined;
+  el("list").addEventListener(
+    "scroll",
+    () => {
+      window.clearTimeout(scrollTimer);
+      scrollTimer = window.setTimeout(() => {
+        void saveUiState({ scrollTop: el("list").scrollTop });
+      }, 200);
+    },
+    { passive: true },
+  );
+
+  window.addEventListener("pagehide", () => {
+    void saveUiState({
+      activeTab,
+      query,
+      scrollTop: el("list").scrollTop,
+      collapsedFolders: Array.from(collapsedFolders),
+    });
+  });
+
   el("open-options").addEventListener("click", (ev) => {
     ev.preventDefault();
     void chrome.runtime.openOptionsPage();

@@ -37,61 +37,74 @@ async function fetchRepoEntries(client: RealMcpClient, repoId: string, repoName:
   const extraTagsMap = new Map<number, string[]>();
   const targetTagIds = new Set<number>();
 
-  // 1. 查询三个目标标签的块 ID
-  for (const { name, tagId } of TARGET_TAGS) {
-    try {
-      const ids = await client.queryBlocksByTagId(repoId, tagId, 1, 2000);
-      for (const id of ids) {
-        targetTagIds.add(id);
-        const list = extraTagsMap.get(id) ?? [];
-        if (!list.includes(name)) list.push(name);
-        extraTagsMap.set(id, list);
-      }
-    } catch (err) {
-      console.warn(`[loader] 标签 ${name}(${tagId}) 查询失败：`, err);
-    }
-  }
-
-  // 2. 查询 other 散落链接（文本搜 http / https）
-  const otherIds = new Set<number>();
-  for (const term of ["http", "https"]) {
-    try {
-      const res = await client.queryByText(repoId, term, 1, 2000);
-      for (const id of res.resultIds ?? []) {
-        if (!targetTagIds.has(id)) {
-          otherIds.add(id);
+  // 1. 并发查询三个目标标签的块 ID
+  await Promise.all(
+    TARGET_TAGS.map(async ({ name, tagId }) => {
+      try {
+        const ids = await client.queryBlocksByTagId(repoId, tagId, 1, 2000);
+        for (const id of ids) {
+          targetTagIds.add(id);
+          const list = extraTagsMap.get(id) ?? [];
+          if (!list.includes(name)) list.push(name);
+          extraTagsMap.set(id, list);
         }
+      } catch (err) {
+        console.warn(`[loader] 标签 ${name}(${tagId}) 查询失败：`, err);
       }
-    } catch (err) {
-      console.warn(`[loader] other 搜索 (${term}) 失败：`, err);
-    }
-  }
+    }),
+  );
+
+  // 2. 并发查询 other 散落链接（文本搜 http / https）
+  const otherIds = new Set<number>();
+  await Promise.all(
+    ["http", "https"].map(async (term) => {
+      try {
+        const res = await client.queryByText(repoId, term, 1, 2000);
+        for (const id of res.resultIds ?? []) {
+          if (!targetTagIds.has(id)) {
+            otherIds.add(id);
+          }
+        }
+      } catch (err) {
+        console.warn(`[loader] other 搜索 (${term}) 失败：`, err);
+      }
+    }),
+  );
 
   // 3. 合并所有需要解析的块 ID（去重）
   const allBlockIds = Array.from(new Set([...targetTagIds, ...otherIds]));
   if (!allBlockIds.length) return [];
 
-  // 4. 分批拉取正文与日志时间
+  // 4. 并发受控拉取正文与日志时间（每组 3 批并发拉取，提速 3 倍）
   const chunks = chunkArray(allBlockIds, BATCH_SIZE);
   const allEntries: UrlEntry[] = [];
   const seenEntries = new Set<string>();
 
-  for (const chunk of chunks) {
-    try {
-      const [rawText, dateMap] = await Promise.all([
-        client.getBlocksText(repoId, chunk),
-        client.getPages(repoId, chunk),
-      ]);
+  const CONCURRENCY = 3;
+  for (let i = 0; i < chunks.length; i += CONCURRENCY) {
+    const slice = chunks.slice(i, i + CONCURRENCY);
+    const results = await Promise.all(
+      slice.map(async (chunk) => {
+        try {
+          const [rawText, dateMap] = await Promise.all([
+            client.getBlocksText(repoId, chunk),
+            client.getPages(repoId, chunk),
+          ]);
+          return parseEntries(rawText, repoId, repoName, extraTagsMap, dateMap);
+        } catch (err) {
+          console.warn(`[loader] 分批解析块数据失败（块数：${chunk.length}）：`, err);
+          return [];
+        }
+      }),
+    );
 
-      const entries = parseEntries(rawText, repoId, repoName, extraTagsMap, dateMap);
-      for (const e of entries) {
+    for (const batch of results) {
+      for (const e of batch) {
         if (!seenEntries.has(e.id)) {
           seenEntries.add(e.id);
           allEntries.push(e);
         }
       }
-    } catch (err) {
-      console.warn(`[loader] 分批解析块数据失败（块数：${chunk.length}）：`, err);
     }
   }
 
