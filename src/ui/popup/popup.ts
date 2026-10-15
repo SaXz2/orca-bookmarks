@@ -87,6 +87,9 @@ async function load(): Promise<void> {
       if (typeof uiState.musicCurrentIndex === "number") {
         musicState.currentIndex = uiState.musicCurrentIndex;
       }
+      if (uiState.musicIsPlaying) {
+        musicState.isPlaying = true;
+      }
       if (uiState.musicIsOpen) {
         musicState.isOpen = true;
         const pSec = document.getElementById("music-player");
@@ -94,6 +97,19 @@ async function load(): Promise<void> {
         if (pSec) pSec.style.display = "flex";
         if (tBtn) tBtn.classList.add("popup-header__music-btn--active");
       }
+    }
+
+    updateMusicPlaylist();
+    if (musicState.isPlaying && musicState.playlist.length > 0) {
+      const cur = musicState.playlist[musicState.currentIndex] || musicState.playlist[0];
+      el("player-title").textContent = cur.title || cur.url;
+      el("player-title").title = cur.title || cur.url;
+      let platform = "其他";
+      if (/music\.163\.com/i.test(cur.url)) platform = "网易云音乐";
+      else if (/bilibili\.com/i.test(cur.url)) platform = "哔哩哔哩";
+      else if (/youtube\.com|youtu\.be/i.test(cur.url)) platform = "YouTube";
+      el("player-meta").textContent = `[${platform}] ${musicState.currentIndex + 1} / ${musicState.playlist.length}`;
+      el("player-play").textContent = "⏸";
     }
 
     // 0ms 即时渲染页面
@@ -658,9 +674,6 @@ function playTrack(index: number): void {
 
   renderPlaylistView();
 
-  const wrap = el("player-frame-wrap");
-  wrap.textContent = "";
-
   const embedUrl = getEmbedUrl(cur);
   if (!embedUrl) {
     console.warn("[music] 无法解析播放地址，尝试下一首：", cur.url);
@@ -668,30 +681,31 @@ function playTrack(index: number): void {
     return;
   }
 
-  const iframe = document.createElement("iframe");
-  iframe.src = embedUrl;
-  iframe.allow = "autoplay; encrypted-media; picture-in-picture";
-  iframe.title = cur.title;
+  // 通知后台 Offscreen 音频宿主播放，关闭弹窗不中断且不产生任何额外页面
+  void chrome.runtime.sendMessage({ type: "orca:music:ensure-offscreen" }, () => {
+    chrome.runtime.sendMessage({ type: "orca:music:play", embedUrl }, () => {
+      // 成功发送播放指令
+    });
+  });
 
   window.clearTimeout(playTimeoutTimer);
-  let hasLoaded = false;
-  iframe.onload = () => {
-    hasLoaded = true;
-  };
-  iframe.onerror = () => {
-    console.warn("[music] 播放遇到故障，自动跳过此曲：", cur.url);
-    nextTrack();
-  };
-
-  playTimeoutTimer = window.setTimeout(() => {
-    if (!hasLoaded && /youtube/i.test(embedUrl)) {
-      console.warn("[music] YouTube 链接加载响应过慢/无法访问，自动跳过：", cur.url);
+  // 针对某些网络环境下 YouTube 9秒未连上自动下一首
+  if (/youtube/i.test(embedUrl)) {
+    playTimeoutTimer = window.setTimeout(() => {
+      console.warn("[music] YouTube 加载检测超时，自动下一首：", cur.url);
       nextTrack();
-    }
-  }, 9000);
+    }, 9000);
+  }
 
-  wrap.appendChild(iframe);
-  void saveUiState({ musicCurrentIndex: index });
+  void saveUiState({ musicCurrentIndex: index, musicIsPlaying: true });
+}
+
+function stopTrack(): void {
+  musicState.isPlaying = false;
+  el("player-play").textContent = "▶";
+  window.clearTimeout(playTimeoutTimer);
+  chrome.runtime.sendMessage({ type: "orca:music:stop" });
+  void saveUiState({ musicIsPlaying: false });
 }
 
 function nextTrack(): void {
@@ -738,10 +752,7 @@ function initMusicPlayer(): void {
 
   el("player-play").addEventListener("click", () => {
     if (musicState.isPlaying) {
-      musicState.isPlaying = false;
-      el("player-play").textContent = "▶";
-      el("player-frame-wrap").textContent = "";
-      window.clearTimeout(playTimeoutTimer);
+      stopTrack();
     } else {
       updateMusicPlaylist();
       playTrack(musicState.currentIndex);
@@ -763,15 +774,6 @@ function initMusicPlayer(): void {
     listEl.style.display = musicState.isListOpen ? "flex" : "none";
     if (musicState.isListOpen) {
       renderPlaylistView();
-    }
-  });
-
-  el("player-bg-btn").addEventListener("click", () => {
-    if (!musicState.playlist.length) updateMusicPlaylist();
-    const cur = musicState.playlist[musicState.currentIndex];
-    if (cur && cur.url) {
-      // 在新标签页打开后台播放，关闭弹窗不中断
-      void chrome.tabs.create({ url: cur.url, active: false });
     }
   });
 }
@@ -813,6 +815,7 @@ function boot(): void {
       musicMode: musicState.mode,
       musicCurrentIndex: musicState.currentIndex,
       musicIsOpen: musicState.isOpen,
+      musicIsPlaying: musicState.isPlaying,
     });
   });
 

@@ -19,6 +19,7 @@ export interface UiState {
   musicMode?: "order" | "random";
   musicCurrentIndex?: number;
   musicIsOpen?: boolean;
+  musicIsPlaying?: boolean;
 }
 
 interface CacheWrapper {
