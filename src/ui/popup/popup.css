@@ -152,29 +152,39 @@ body {
   from { opacity: 0; transform: translateY(-4px); }
   to { opacity: 1; transform: translateY(0); }
 }
-.popup-player__info {
+.popup-player__header {
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 8px;
 }
+.popup-player__info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow: hidden;
+  flex: 1;
+}
 .popup-player__title {
-  font-weight: 500;
-  font-size: 12px;
+  font-weight: 600;
+  font-size: 13px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  flex: 1;
+  color: var(--popup-fg);
 }
 .popup-player__meta {
   font-size: 11px;
   color: var(--popup-muted);
+}
+.popup-player__actions {
   flex-shrink: 0;
 }
 .popup-player__controls {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
+  flex-wrap: wrap;
 }
 .popup-player__btn {
   border: 1px solid var(--popup-border);
@@ -196,14 +206,59 @@ body {
   color: #fff;
   border-color: var(--popup-accent);
 }
+.popup-player__btn--sub {
+  color: var(--popup-muted);
+}
+.popup-player__list {
+  max-height: 140px;
+  overflow-y: auto;
+  border: 1px solid var(--popup-border);
+  border-radius: 4px;
+  background: var(--popup-bg);
+  display: flex;
+  flex-direction: column;
+}
+.popup-player__list-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 8px;
+  font-size: 11px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--popup-border);
+  text-decoration: none;
+  color: var(--popup-fg);
+}
+.popup-player__list-item:last-child {
+  border-bottom: none;
+}
+.popup-player__list-item:hover {
+  background: var(--popup-hover-bg);
+}
+.popup-player__list-item--active {
+  background: var(--popup-hover-bg);
+  color: var(--popup-accent);
+  font-weight: 600;
+}
+.popup-player__list-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+.popup-player__list-tag {
+  font-size: 10px;
+  color: var(--popup-muted);
+  margin-left: 6px;
+  flex-shrink: 0;
+}
 .popup-player__frame-wrap {
   position: relative;
   width: 100%;
-  height: 80px;
-  border-radius: 4px;
+  height: 0;
+  opacity: 0.01;
+  pointer-events: none;
   overflow: hidden;
-  background: #000;
-  margin-top: 2px;
 }
 .popup-player__frame-wrap iframe {
   width: 100%;
@@ -426,18 +481,20 @@ body {
 /* 笔记内容摘要（父/子节点内容、AI总结段落预览） */
 .popup-item__snippet {
   font-size: 11px;
-  line-height: 1.35;
-  color: var(--popup-muted);
+  line-height: 1.4;
+  color: var(--popup-fg);
   background: var(--popup-hover-bg);
-  border-left: 2px solid var(--popup-accent);
+  border-left: 3px solid var(--popup-accent);
   border-radius: 0 4px 4px 0;
-  padding: 3px 6px;
-  margin-top: 4px;
+  padding: 4px 8px;
+  margin-top: 5px;
+  margin-bottom: 2px;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
   word-break: break-all;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
 }
 
 .popup-item__tags {

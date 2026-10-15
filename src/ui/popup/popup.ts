@@ -79,6 +79,21 @@ async function load(): Promise<void> {
         collapsedFolders.clear();
         uiState.collapsedFolders.forEach((f) => collapsedFolders.add(f as FolderId));
       }
+      if (uiState.musicMode) {
+        musicState.mode = uiState.musicMode;
+        const modeBtn = document.getElementById("player-mode");
+        if (modeBtn) modeBtn.textContent = musicState.mode === "order" ? "🔁 顺序" : "🔀 随机";
+      }
+      if (typeof uiState.musicCurrentIndex === "number") {
+        musicState.currentIndex = uiState.musicCurrentIndex;
+      }
+      if (uiState.musicIsOpen) {
+        musicState.isOpen = true;
+        const pSec = document.getElementById("music-player");
+        const tBtn = document.getElementById("music-player-toggle");
+        if (pSec) pSec.style.display = "flex";
+        if (tBtn) tBtn.classList.add("popup-header__music-btn--active");
+      }
     }
 
     // 0ms 即时渲染页面
@@ -141,7 +156,8 @@ async function load(): Promise<void> {
         (e, i) =>
           e.id === freshEntries[i]?.id &&
           e.title === freshEntries[i]?.title &&
-          e.url === freshEntries[i]?.url,
+          e.url === freshEntries[i]?.url &&
+          e.snippet === freshEntries[i]?.snippet,
       );
 
     if (isDifferent) {
@@ -514,6 +530,7 @@ interface MusicPlayerState {
   isPlaying: boolean;
   mode: "order" | "random";
   isOpen: boolean;
+  isListOpen: boolean;
 }
 
 const musicState: MusicPlayerState = {
@@ -522,6 +539,7 @@ const musicState: MusicPlayerState = {
   isPlaying: false,
   mode: "order",
   isOpen: false,
+  isListOpen: false,
 };
 
 let playTimeoutTimer: number | undefined;
@@ -539,6 +557,52 @@ function isMusicEntry(e: UrlEntry): boolean {
 
 function updateMusicPlaylist(): void {
   musicState.playlist = entries.filter(isMusicEntry);
+  const countEl = document.getElementById("player-list-count");
+  if (countEl) countEl.textContent = String(musicState.playlist.length);
+  renderPlaylistView();
+}
+
+function renderPlaylistView(): void {
+  const listEl = el("player-playlist");
+  if (!listEl) return;
+  listEl.textContent = "";
+
+  if (!musicState.playlist.length) {
+    const empty = document.createElement("div");
+    empty.style.padding = "8px";
+    empty.style.color = "var(--popup-muted)";
+    empty.style.fontSize = "11px";
+    empty.textContent = "无音乐标签条目";
+    listEl.appendChild(empty);
+    return;
+  }
+
+  musicState.playlist.forEach((track, idx) => {
+    const row = document.createElement("div");
+    row.className = "popup-player__list-item" + (idx === musicState.currentIndex ? " popup-player__list-item--active" : "");
+    row.addEventListener("click", () => {
+      playTrack(idx);
+    });
+
+    const titleSpan = document.createElement("span");
+    titleSpan.className = "popup-player__list-title";
+    titleSpan.textContent = `${idx + 1}. ${track.title || track.url}`;
+    titleSpan.title = track.title || track.url;
+
+    const tagSpan = document.createElement("span");
+    tagSpan.className = "popup-player__list-tag";
+    if (/music\.163\.com/i.test(track.url)) {
+      tagSpan.textContent = "网易云";
+    } else if (/bilibili\.com/i.test(track.url)) {
+      tagSpan.textContent = "B站";
+    } else if (/youtube\.com|youtu\.be/i.test(track.url)) {
+      tagSpan.textContent = "YouTube";
+    }
+
+    row.appendChild(titleSpan);
+    row.appendChild(tagSpan);
+    listEl.appendChild(row);
+  });
 }
 
 function getEmbedUrl(entry: UrlEntry): string | null {
@@ -583,8 +647,16 @@ function playTrack(index: number): void {
   const cur = musicState.playlist[index];
   el("player-title").textContent = cur.title || cur.url;
   el("player-title").title = cur.title || cur.url;
-  el("player-meta").textContent = `${index + 1} / ${musicState.playlist.length}`;
+  
+  let platform = "其他";
+  if (/music\.163\.com/i.test(cur.url)) platform = "网易云音乐";
+  else if (/bilibili\.com/i.test(cur.url)) platform = "哔哩哔哩";
+  else if (/youtube\.com|youtu\.be/i.test(cur.url)) platform = "YouTube";
+
+  el("player-meta").textContent = `[${platform}] ${index + 1} / ${musicState.playlist.length}`;
   el("player-play").textContent = "⏸";
+
+  renderPlaylistView();
 
   const wrap = el("player-frame-wrap");
   wrap.textContent = "";
@@ -592,7 +664,6 @@ function playTrack(index: number): void {
   const embedUrl = getEmbedUrl(cur);
   if (!embedUrl) {
     console.warn("[music] 无法解析播放地址，尝试下一首：", cur.url);
-    // 自动跳到下一首
     window.setTimeout(() => nextTrack(), 500);
     return;
   }
@@ -602,7 +673,6 @@ function playTrack(index: number): void {
   iframe.allow = "autoplay; encrypted-media; picture-in-picture";
   iframe.title = cur.title;
 
-  // 网络超时跳过机制：针对某些可能打不开的海外 YouTube 或损坏链接，10秒未响应或加载失败自动跳过
   window.clearTimeout(playTimeoutTimer);
   let hasLoaded = false;
   iframe.onload = () => {
@@ -614,7 +684,6 @@ function playTrack(index: number): void {
   };
 
   playTimeoutTimer = window.setTimeout(() => {
-    // 若特定网络环境下完全无法加载该 iframe
     if (!hasLoaded && /youtube/i.test(embedUrl)) {
       console.warn("[music] YouTube 链接加载响应过慢/无法访问，自动跳过：", cur.url);
       nextTrack();
@@ -622,6 +691,7 @@ function playTrack(index: number): void {
   }, 9000);
 
   wrap.appendChild(iframe);
+  void saveUiState({ musicCurrentIndex: index });
 }
 
 function nextTrack(): void {
@@ -645,11 +715,13 @@ function prevTrack(): void {
 function initMusicPlayer(): void {
   const toggleBtn = el<HTMLButtonElement>("music-player-toggle");
   const playerSection = el("music-player");
+  const listEl = el("player-playlist");
 
   toggleBtn.addEventListener("click", () => {
     musicState.isOpen = !musicState.isOpen;
     playerSection.style.display = musicState.isOpen ? "flex" : "none";
     toggleBtn.classList.toggle("popup-header__music-btn--active", musicState.isOpen);
+    void saveUiState({ musicIsOpen: musicState.isOpen });
     if (musicState.isOpen) {
       updateMusicPlaylist();
       if (!musicState.isPlaying && musicState.playlist.length > 0) {
@@ -661,11 +733,11 @@ function initMusicPlayer(): void {
   el("player-mode").addEventListener("click", () => {
     musicState.mode = musicState.mode === "order" ? "random" : "order";
     el("player-mode").textContent = musicState.mode === "order" ? "🔁 顺序" : "🔀 随机";
+    void saveUiState({ musicMode: musicState.mode });
   });
 
   el("player-play").addEventListener("click", () => {
     if (musicState.isPlaying) {
-      // 暂停
       musicState.isPlaying = false;
       el("player-play").textContent = "▶";
       el("player-frame-wrap").textContent = "";
@@ -684,6 +756,23 @@ function initMusicPlayer(): void {
   el("player-prev").addEventListener("click", () => {
     updateMusicPlaylist();
     prevTrack();
+  });
+
+  el("player-toggle-list").addEventListener("click", () => {
+    musicState.isListOpen = !musicState.isListOpen;
+    listEl.style.display = musicState.isListOpen ? "flex" : "none";
+    if (musicState.isListOpen) {
+      renderPlaylistView();
+    }
+  });
+
+  el("player-bg-btn").addEventListener("click", () => {
+    if (!musicState.playlist.length) updateMusicPlaylist();
+    const cur = musicState.playlist[musicState.currentIndex];
+    if (cur && cur.url) {
+      // 在新标签页打开后台播放，关闭弹窗不中断
+      void chrome.tabs.create({ url: cur.url, active: false });
+    }
   });
 }
 
@@ -721,6 +810,9 @@ function boot(): void {
       collapsedFolders: Array.from(collapsedFolders),
       popupWidth: document.body.offsetWidth,
       popupHeight: document.body.offsetHeight,
+      musicMode: musicState.mode,
+      musicCurrentIndex: musicState.currentIndex,
+      musicIsOpen: musicState.isOpen,
     });
   });
 

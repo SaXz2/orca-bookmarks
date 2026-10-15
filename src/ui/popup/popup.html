@@ -12,16 +12,23 @@
     <a id="open-options" class="popup-header__options-link" href="#" title="打开配置页" aria-label="打开配置页">⚙</a>
   </header>
   <section id="music-player" class="popup-player" style="display: none;">
-    <div class="popup-player__info">
-      <div id="player-title" class="popup-player__title" title="暂未播放">暂无正在播放的音乐</div>
-      <div id="player-meta" class="popup-player__meta">准备就绪</div>
+    <div class="popup-player__header">
+      <div class="popup-player__info">
+        <div id="player-title" class="popup-player__title" title="暂未播放">暂无正在播放的音乐</div>
+        <div id="player-meta" class="popup-player__meta">准备就绪</div>
+      </div>
+      <div class="popup-player__actions">
+        <button id="player-bg-btn" class="popup-player__btn popup-player__btn--sub" type="button" title="在后台独立标签页中继续播放，关闭弹窗不中断">🌐 后台播放</button>
+      </div>
     </div>
     <div class="popup-player__controls">
       <button id="player-mode" class="popup-player__btn" type="button" title="切换播放模式（顺序 / 随机）">🔁 顺序</button>
       <button id="player-prev" class="popup-player__btn" type="button" title="上一首">⏮</button>
       <button id="player-play" class="popup-player__btn popup-player__btn--play" type="button" title="播放 / 暂停">▶</button>
       <button id="player-next" class="popup-player__btn" type="button" title="下一首（遇故障自动跳过）">⏭</button>
+      <button id="player-toggle-list" class="popup-player__btn popup-player__btn--sub" type="button" title="展开/收起歌曲清单">📜 播放清单 (<span id="player-list-count">0</span>)</button>
     </div>
+    <div id="player-playlist" class="popup-player__list" style="display: none;"></div>
     <div id="player-frame-wrap" class="popup-player__frame-wrap"></div>
   </section>
   <nav id="folder-tabs" class="popup-tabs" role="tablist" aria-label="文件夹"></nav>
