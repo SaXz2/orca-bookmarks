@@ -1,7 +1,7 @@
 /**
  * background service worker（MV3, module）。
  * 1. MCP HTTP 代理：页面侧 fetch localhost 受 CORS 限制，统一走 SW（host_permissions 绕 CORS）。
- * 2. Offscreen 音频管理：负责创建与维护 offscreen document，弹窗关闭后音乐在后台继续播放。
+ * 2. 独立音乐播放标签页单例管理：通过 chrome.tabs 保持单个播放器后台页面，避免重复开多个。
  */
 
 interface HttpMsg {
@@ -13,28 +13,46 @@ interface HttpMsg {
   timeout?: number;
 }
 
-interface EnsureOffscreenMsg {
-  type: "orca:music:ensure-offscreen";
+interface OpenPlayerMsg {
+  type: "orca:music:open-player";
+  trackIndex?: number;
 }
 
 const HTTP_TIMEOUT_DEFAULT = 30_000;
+let playerTabId: number | null = null;
 
-async function ensureOffscreenDocument(): Promise<void> {
-  const OFFSCREEN_URL = "offscreen/offscreen.html";
-  if (!chrome.offscreen) return;
-  const existing = await chrome.offscreen.hasDocument();
-  if (existing) return;
+async function openOrFocusPlayerTab(trackIndex?: number): Promise<void> {
+  const playerUrl = chrome.runtime.getURL(`player/player.html${typeof trackIndex === "number" ? `?index=${trackIndex}` : ""}`);
 
-  await chrome.offscreen.createDocument({
-    url: OFFSCREEN_URL,
-    reasons: [chrome.offscreen.Reason.AUDIO_PLAYBACK],
-    justification: "Background audio playback for bookmarks music player",
-  });
+  if (playerTabId !== null) {
+    try {
+      const tab = await chrome.tabs.get(playerTabId);
+      if (tab && tab.id) {
+        // 已经在运行中：如果指定了新的切歌，更新其 URL
+        if (typeof trackIndex === "number") {
+          await chrome.tabs.update(tab.id, { url: playerUrl, active: false });
+        }
+        return;
+      }
+    } catch {
+      playerTabId = null;
+    }
+  }
+
+  // 创建一个后台静默标签页（active: false），不抢占用户当前正浏览的网页
+  const created = await chrome.tabs.create({ url: playerUrl, active: false });
+  playerTabId = created.id ?? null;
 }
 
-chrome.runtime.onMessage.addListener((msg: HttpMsg | EnsureOffscreenMsg, _sender, sendResponse) => {
-  if (msg?.type === "orca:music:ensure-offscreen") {
-    ensureOffscreenDocument()
+chrome.tabs.onRemoved.addListener((tabId) => {
+  if (tabId === playerTabId) {
+    playerTabId = null;
+  }
+});
+
+chrome.runtime.onMessage.addListener((msg: HttpMsg | OpenPlayerMsg, _sender, sendResponse) => {
+  if (msg?.type === "orca:music:open-player") {
+    openOrFocusPlayerTab(msg.trackIndex)
       .then(() => sendResponse({ ok: true }))
       .catch((err) => sendResponse({ ok: false, error: String(err) }));
     return true;
@@ -55,11 +73,10 @@ chrome.runtime.onMessage.addListener((msg: HttpMsg | EnsureOffscreenMsg, _sender
       sendResponse({ status: r.status, text: await r.text(), headers });
     })
     .catch((e: unknown) => {
-      // 网络错误/超时 → status 0，调用方按非 2xx 处理
       sendResponse({ status: 0, text: e instanceof Error ? e.message : String(e), headers: {} });
     })
     .finally(() => clearTimeout(timer));
-  return true; // 异步 sendResponse
+  return true;
 });
 
 chrome.runtime.onInstalled.addListener(() => {

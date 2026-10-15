@@ -9,7 +9,7 @@ const options = {
     "background": "src/background.ts",
     "popup/popup": "src/ui/popup/popup.ts",
     "options/options": "src/ui/options/options.ts",
-    "offscreen/offscreen": "src/offscreen/offscreen.ts",
+    "player/player": "src/ui/player/player.ts",
   },
   bundle: true,
   format: "esm",
@@ -26,8 +26,9 @@ function copyStatic() {
   cpSync("src/ui/popup/popup.css", "dist/popup/popup.css");
   cpSync("src/ui/options/options.html", "dist/options/options.html");
   cpSync("src/ui/options/options.css", "dist/options/options.css");
-  mkdirSync("dist/offscreen", { recursive: true });
-  cpSync("src/offscreen/offscreen.html", "dist/offscreen/offscreen.html");
+  mkdirSync("dist/player", { recursive: true });
+  cpSync("src/ui/player/player.html", "dist/player/player.html");
+  cpSync("src/ui/player/player.css", "dist/player/player.css");
 }
 
 if (watch) {

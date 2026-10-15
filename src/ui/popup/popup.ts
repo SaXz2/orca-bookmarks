@@ -793,11 +793,11 @@ function initMusicPlayer(): void {
   const bgModeBtn = document.getElementById("player-bg-mode-btn");
   if (bgModeBtn) {
     bgModeBtn.addEventListener("click", () => {
-      musicState.bgMode = musicState.bgMode === "popup" ? "offscreen" : "popup";
-      bgModeBtn.textContent = musicState.bgMode === "popup" ? "🎵 模式: 弹窗内置" : "🎧 模式: 后台常驻";
-      if (musicState.isPlaying) {
-        playTrack(musicState.currentIndex);
-      }
+      // 打开/唤醒后台常驻播放器标签页，关闭弹窗不中断
+      void chrome.runtime.sendMessage({
+        type: "orca:music:open-player",
+        trackIndex: musicState.currentIndex,
+      });
     });
   }
 }
