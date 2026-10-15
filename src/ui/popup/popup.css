@@ -55,8 +55,10 @@
 * { box-sizing: border-box; }
 
 html, body {
-  width: 420px;
-  height: 580px;
+  min-width: 360px;
+  max-width: 800px;
+  min-height: 400px;
+  max-height: 600px;
   margin: 0;
   padding: 0;
   overflow: hidden;
@@ -64,11 +66,14 @@ html, body {
 }
 
 body {
+  width: 480px;
+  height: 580px;
   font: 13px/1.5 system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
   background: var(--popup-bg);
   color: var(--popup-fg);
   display: flex;
   flex-direction: column;
+  position: relative;
 }
 
 :focus-visible {
@@ -120,32 +125,34 @@ body {
 /* ── 文件夹切换 tabs ─────────────────────────────────── */
 .popup-tabs {
   display: flex;
-  gap: 2px;
-  padding: 6px 8px 0;
-  overflow-x: auto;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 6px 8px 6px;
   border-bottom: 1px solid var(--popup-border);
-  scrollbar-width: thin;
 }
 
 .popup-tabs__tab {
   flex-shrink: 0;
-  border: none;
-  background: transparent;
+  border: 1px solid var(--popup-border);
+  background: var(--popup-bg);
   color: var(--popup-muted);
   font: inherit;
   font-size: 12px;
-  padding: 4px 10px 6px;
-  border-radius: 6px 6px 0 0;
+  padding: 2px 10px;
+  border-radius: 12px;
   cursor: pointer;
+  transition: all 0.15s ease;
 }
 .popup-tabs__tab:hover {
   background: var(--popup-hover-bg);
   color: var(--popup-fg);
 }
 .popup-tabs__tab--active {
-  color: var(--popup-fg);
-  font-weight: 600;
-  box-shadow: inset 0 -2px 0 var(--popup-accent);
+  color: #fff;
+  background: var(--popup-accent);
+  border-color: var(--popup-accent);
+  font-weight: 500;
+  box-shadow: none;
 }
 
 /* ── 状态条：加载 / 错误 / 未配置 ─────────────────────── */
@@ -373,4 +380,33 @@ body {
   color: var(--popup-muted);
   font-size: 12px;
   text-align: center;
+}
+
+/* ── 拖拽调整弹窗尺寸手柄（右下角） ─────────────────────── */
+.popup-resizer {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 14px;
+  height: 14px;
+  cursor: nwse-resize;
+  z-index: 100;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  padding: 2px;
+  user-select: none;
+}
+.popup-resizer::after {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-right: 2px solid var(--popup-muted);
+  border-bottom: 2px solid var(--popup-muted);
+  opacity: 0.5;
+  transition: opacity 0.15s ease;
+}
+.popup-resizer:hover::after {
+  opacity: 1;
+  border-color: var(--popup-accent);
 }

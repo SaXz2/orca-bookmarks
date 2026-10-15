@@ -13,6 +13,8 @@ export interface UiState {
   query?: string;
   scrollTop?: number;
   collapsedFolders?: string[];
+  popupWidth?: number;
+  popupHeight?: number;
 }
 
 interface CacheWrapper {

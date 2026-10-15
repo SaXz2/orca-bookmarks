@@ -58,8 +58,12 @@ async function load(): Promise<void> {
     entries = cachedEntries;
     index = buildIndex(entries);
 
-    // 恢复历史浏览状态
+    // 恢复历史浏览状态与窗口大小
     if (uiState) {
+      if (uiState.popupWidth && uiState.popupHeight) {
+        document.body.style.width = `${uiState.popupWidth}px`;
+        document.body.style.height = `${uiState.popupHeight}px`;
+      }
       if (uiState.activeTab) activeTab = uiState.activeTab as TabId;
       if (uiState.query) {
         query = uiState.query;
@@ -375,7 +379,57 @@ function renderItem(e: UrlEntry): HTMLElement {
   return a;
 }
 
+function initResizer(): void {
+  const resizer = document.createElement("div");
+  resizer.className = "popup-resizer";
+  resizer.title = "按住拖拽调整弹窗大小";
+  document.body.appendChild(resizer);
+
+  let isDragging = false;
+  let startX = 0;
+  let startY = 0;
+  let startWidth = 0;
+  let startHeight = 0;
+  let resizeTimer: number | undefined;
+
+  resizer.addEventListener("mousedown", (ev) => {
+    isDragging = true;
+    startX = ev.clientX;
+    startY = ev.clientY;
+    startWidth = document.body.offsetWidth;
+    startHeight = document.body.offsetHeight;
+    document.body.style.userSelect = "none";
+    ev.preventDefault();
+  });
+
+  window.addEventListener("mousemove", (ev) => {
+    if (!isDragging) return;
+    const newW = Math.max(360, Math.min(800, startWidth + (ev.clientX - startX)));
+    const newH = Math.max(400, Math.min(600, startHeight + (ev.clientY - startY)));
+    document.body.style.width = `${newW}px`;
+    document.body.style.height = `${newH}px`;
+
+    window.clearTimeout(resizeTimer);
+    resizeTimer = window.setTimeout(() => {
+      void saveUiState({ popupWidth: newW, popupHeight: newH });
+    }, 200);
+  });
+
+  window.addEventListener("mouseup", () => {
+    if (isDragging) {
+      isDragging = false;
+      document.body.style.userSelect = "";
+      void saveUiState({
+        popupWidth: document.body.offsetWidth,
+        popupHeight: document.body.offsetHeight,
+      });
+    }
+  });
+}
+
 function boot(): void {
+  initResizer();
+
   let searchTimer: number | undefined;
   el<HTMLInputElement>("search").addEventListener("input", (ev) => {
     query = (ev.target as HTMLInputElement).value;
@@ -404,6 +458,8 @@ function boot(): void {
       query,
       scrollTop: el("list").scrollTop,
       collapsedFolders: Array.from(collapsedFolders),
+      popupWidth: document.body.offsetWidth,
+      popupHeight: document.body.offsetHeight,
     });
   });
 
