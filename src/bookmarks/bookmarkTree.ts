@@ -1,10 +1,13 @@
 /**
- * 收藏夹文件夹树：网址标签条目 → 文件夹分组。
- * 分组规则（@0 拍板 + @18 补充标签）：
- *  1. 标签优先：bilibili > youtube > vimeo > 网址（含子类）> other；
- *  2. 标签全未命中 → 域名兜底：b 站/vimeo/youtube 域名；
- *  3. 其余 → other。
- * 只改 TAG_RULES / DOMAIN_RULES / FOLDER_ORDER 三处即可调整分组。
+ * 收藏夹文件夹树：纯标签分类（无域名兜底）。
+ *
+ * 分类规则（用户明确要求）：
+ *  1. 纯标签分类：
+ *     - "网址" 标签 → 归入 "网址" 文件夹
+ *     - "哔哩哔哩" 标签 → 归入 "哔哩哔哩" 文件夹
+ *     - "Youtube" 标签 → 归入 "Youtube" 文件夹
+ *  2. 严格无域名兜底（即使域名为 bilibili/youtube，无对应标签也归入 other）
+ *  3. 其余所有未携带上述三标签的 HTTP 笔记链接 → 归入 "other"
  */
 import type { UrlEntry } from "../mcp/client";
 
@@ -16,71 +19,42 @@ export interface BookmarkNode {
 
 export interface FolderNode {
   kind: "folder";
-  name: string;
+  name: FolderName;
   children: BookmarkNode[];
 }
 
 export type TreeNode = FolderNode | BookmarkNode;
 
-/**
- * 标签规则，顺序即优先级。
- * 视频类：bilibili > youtube > vimeo（@18 补充：Vimeo 结构同 Youtube 且有封面）。
- * 网址类：网址 + 子类（游戏网址/下载网址，@18 补充）。
- * 双标签归 bilibili（@0 拍板）。
- */
-const TAG_RULES: { folder: string; tag: string }[] = [
-  { folder: "bilibili", tag: "哔哩哔哩" },
-  { folder: "youtube", tag: "Youtube" },
-  { folder: "vimeo", tag: "Vimeo" },
-  { folder: "网址", tag: "网址" },
-  { folder: "网址", tag: "游戏网址" },
-  { folder: "网址", tag: "下载网址" },
-];
-
-/** 域名兜底规则（标签未命中时） */
-const DOMAIN_RULES: { folder: string; domains: string[] }[] = [
-  { folder: "bilibili", domains: ["bilibili.com", "b23.tv"] },
-  { folder: "youtube", domains: ["youtube.com", "youtu.be"] },
-  { folder: "vimeo", domains: ["vimeo.com"] },
-];
-
 /** 文件夹输出顺序 */
-const FOLDER_ORDER = ["bilibili", "youtube", "vimeo", "网址", "other"];
+export const FOLDER_ORDER = ["网址", "哔哩哔哩", "Youtube", "other"] as const;
+export type FolderName = (typeof FOLDER_ORDER)[number];
 
 function hasTag(e: UrlEntry, tag: string): boolean {
-  return e.tags.some((t) => t.toLowerCase() === tag);
-}
-
-function hasDomain(e: UrlEntry, domains: string[]): boolean {
-  try {
-    const host = new URL(e.url).hostname.toLowerCase();
-    return domains.some((d) => host === d || host.endsWith("." + d));
-  } catch {
-    return false; // 非法 URL 不兜底
-  }
+  return e.tags.some((t) => t.toLowerCase() === tag.toLowerCase());
 }
 
 /**
- * 分类：标签全局优先于域名兜底。
- * 即：任一规则的标签命中 → 按 TAG_RULES 顺序首个命中（双标签归 bilibili）；
- * 所有标签都未命中 → 再按域名兜底（防止 youtube 标签 + b 站域名的条目被域名规则抢走）。
+ * 纯标签分类（严格无域名兜底）：
+ * - 含 "网址" 标签 → "网址"
+ * - 含 "哔哩哔哩" 标签 → "哔哩哔哩"
+ * - 含 "Youtube" 标签 → "Youtube"
+ * - 其余 → "other"
  */
-export function classify(e: UrlEntry): string {
-  for (const r of TAG_RULES) {
-    if (hasTag(e, r.tag)) return r.folder;
-  }
-  for (const r of DOMAIN_RULES) {
-    if (hasDomain(e, r.domains)) return r.folder;
-  }
+export function classify(e: UrlEntry): FolderName {
+  if (hasTag(e, "网址")) return "网址";
+  if (hasTag(e, "哔哩哔哩") || hasTag(e, "bilibili")) return "哔哩哔哩";
+  if (hasTag(e, "Youtube") || hasTag(e, "youtube")) return "Youtube";
   return "other";
 }
 
 /** 构建文件夹树（按 FOLDER_ORDER 排序，始终输出全部文件夹，空文件夹 children 为空数组） */
 export function buildBookmarkTree(entries: UrlEntry[]): FolderNode[] {
-  const byFolder = new Map<string, BookmarkNode[]>();
+  const byFolder = new Map<FolderName, BookmarkNode[]>();
+  for (const name of FOLDER_ORDER) {
+    byFolder.set(name, []);
+  }
   for (const e of entries) {
     const f = classify(e);
-    if (!byFolder.has(f)) byFolder.set(f, []);
     byFolder.get(f)!.push({ kind: "bookmark", entry: e });
   }
   return FOLDER_ORDER.map((name) => ({

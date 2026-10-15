@@ -193,11 +193,32 @@ body {
 }
 
 .popup-folder__header {
-  margin: 10px 4px 4px;
+  margin: 6px 2px 2px;
+  padding: 4px 6px;
   font-size: 12px;
   font-weight: 600;
   color: var(--popup-muted);
-  text-transform: capitalize;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  user-select: none;
+  border-radius: var(--popup-radius);
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.popup-folder__header:hover {
+  background: var(--popup-hover-bg);
+  color: var(--popup-fg);
+}
+.popup-folder__arrow {
+  display: inline-block;
+  font-size: 10px;
+  width: 12px;
+  text-align: center;
+  color: var(--popup-muted);
+}
+.popup-folder--collapsed .popup-folder__content {
+  display: none;
 }
 
 .popup-item {
@@ -232,6 +253,21 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.popup-item__meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.popup-item__date {
+  font-size: 10px;
+  color: var(--popup-muted);
+  flex-shrink: 0;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: var(--popup-hover-bg);
+  font-variant-numeric: tabular-nums;
 }
 .popup-item__url {
   font-size: 11px;

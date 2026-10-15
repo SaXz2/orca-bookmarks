@@ -7,14 +7,14 @@
  */
 import { loadBookmarkEntries } from "../../mcp/loader";
 import { loadConfig, isConfigured } from "../../store/config";
-import { classify } from "../../bookmarks/bookmarkTree";
+import { classify, FOLDER_ORDER, type FolderName } from "../../bookmarks/bookmarkTree";
 import { buildIndex, search, type SearchIndex } from "../../search/search";
 import { renderCover, renderFavicon } from "../cover";
 import type { UrlEntry } from "../../mcp/client";
 
-/** 文件夹顺序（与 bookmarkTree 分组规则一致） */
-const FOLDERS = ["bilibili", "youtube", "vimeo", "网址", "other"] as const;
-type FolderId = (typeof FOLDERS)[number];
+/** 文件夹顺序（与 bookmarkTree 纯标签分组规则一致） */
+const FOLDERS = FOLDER_ORDER;
+type FolderId = FolderName;
 type TabId = FolderId | "all";
 
 // ?theme=dark 供预览/无头截图强制暗色
@@ -26,6 +26,7 @@ let entries: UrlEntry[] = [];
 let index: SearchIndex = buildIndex([]);
 let activeTab: TabId = "all";
 let query = "";
+const collapsedFolders = new Set<FolderId>();
 
 function el<T extends HTMLElement>(id: string): T {
   return document.getElementById(id) as T;
@@ -101,9 +102,7 @@ function renderTabs(): void {
   const counts = new Map<FolderId, number>(FOLDERS.map((f) => [f, 0]));
   for (const e of entries) {
     const f = classify(e);
-    if (f === "bilibili" || f === "youtube" || f === "vimeo" || f === "网址" || f === "other") {
-      counts.set(f, (counts.get(f) ?? 0) + 1);
-    }
+    counts.set(f, (counts.get(f) ?? 0) + 1);
   }
 
   tabsEl.textContent = "";
@@ -160,15 +159,57 @@ function renderList(): void {
 
 function renderFolderGroup(folder: FolderId, group: UrlEntry[]): HTMLElement {
   const wrap = document.createElement("section");
-  wrap.className = "popup-folder";
-  const h = document.createElement("h2");
+  const isCollapsed = collapsedFolders.has(folder);
+  wrap.className = "popup-folder" + (isCollapsed ? " popup-folder--collapsed" : "");
+
+  const h = document.createElement("div");
   h.className = "popup-folder__header";
-  h.textContent = `${folder} (${group.length})`;
+  h.setAttribute("role", "button");
+  h.setAttribute("tabindex", "0");
+  h.setAttribute("aria-expanded", String(!isCollapsed));
+
+  const arrow = document.createElement("span");
+  arrow.className = "popup-folder__arrow";
+  arrow.textContent = isCollapsed ? "▸" : "▾";
+
+  const title = document.createElement("span");
+  title.className = "popup-folder__title";
+  title.textContent = `${folder} (${group.length})`;
+
+  h.append(arrow, title);
+
+  const toggle = () => {
+    if (collapsedFolders.has(folder)) {
+      collapsedFolders.delete(folder);
+      wrap.classList.remove("popup-folder--collapsed");
+      arrow.textContent = "▾";
+      h.setAttribute("aria-expanded", "true");
+    } else {
+      collapsedFolders.add(folder);
+      wrap.classList.add("popup-folder--collapsed");
+      arrow.textContent = "▸";
+      h.setAttribute("aria-expanded", "false");
+    }
+  };
+
+  h.addEventListener("click", toggle);
+  h.addEventListener("keydown", (ev) => {
+    if (ev.key === "Enter" || ev.key === " ") {
+      ev.preventDefault();
+      toggle();
+    }
+  });
+
   wrap.appendChild(h);
+
+  const content = document.createElement("div");
+  content.className = "popup-folder__content";
   if (!group.length) {
-    wrap.appendChild(renderEmpty(query.trim() ? "无匹配结果" : "该标签下暂无条目"));
+    content.appendChild(renderEmpty(query.trim() ? "无匹配结果" : "该标签下暂无条目"));
   }
-  for (const e of group) wrap.appendChild(renderItem(e));
+  for (const e of group) content.appendChild(renderItem(e));
+  wrap.appendChild(content);
+
   return wrap;
 }
 
@@ -179,7 +220,7 @@ function renderEmpty(text: string): HTMLElement {
   return d;
 }
 
-/** 条目卡片：封面缩略图（无封面用 favicon）+ 标题 + URL，点击新标签打开 */
+/** 条目卡片：封面缩略图（无封面用 favicon）+ 标题 + 日志日期 + URL，点击新标签打开 */
 function renderItem(e: UrlEntry): HTMLElement {
   const a = document.createElement("a");
   a.className = "popup-item";
@@ -203,12 +244,24 @@ function renderItem(e: UrlEntry): HTMLElement {
   const titleText = e.title || e.url;
   title.textContent = titleText;
   title.title = titleText;
+
+  const meta = document.createElement("div");
+  meta.className = "popup-item__meta";
+
+  if (e.date) {
+    const dateEl = document.createElement("span");
+    dateEl.className = "popup-item__date";
+    dateEl.textContent = e.date;
+    meta.appendChild(dateEl);
+  }
+
   const url = document.createElement("div");
   url.className = "popup-item__url";
   url.textContent = e.url;
   url.title = e.url;
-  body.append(title, url);
+  meta.appendChild(url);
 
+  body.append(title, meta);
   a.append(media, body);
   return a;
 }

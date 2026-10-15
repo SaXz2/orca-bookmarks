@@ -78,7 +78,7 @@ export class RealMcpClient implements McpClient {
   }
 
   /** 内部：query_blocks 通用 */
-  protected async queryBlocks(
+  async queryBlocks(
     repoId: string,
     q: Record<string, unknown>,
     page: number,
@@ -91,7 +91,46 @@ export class RealMcpClient implements McpClient {
     return { resultIds: res.resultIds ?? [], totalCount: res.totalCount ?? 0 };
   }
 
-  /** 内部：按标签名查 block id（嵌套版 kind:100） */
+  /**
+   * 按标签块 ID 查引用它的 block id（kind:6 引用查询）
+   * 实测：
+   * - 网址 (tag 43) -> 23 条
+   * - 哔哩哔哩 (tag 6560) -> 320 条
+   * - Youtube (tag 7659) -> 19 条
+   */
+  async queryBlocksByTagId(repoId: string, tagId: number, page = 1, pageSize = 2000): Promise<number[]> {
+    const res = await this.queryBlocks(repoId, {
+      kind: 100,
+      conditions: [{ kind: 6, blockId: tagId }],
+    }, page, pageSize);
+    return res.resultIds;
+  }
+
+  /**
+   * 批量查询块所在页面的名称/日志日期
+   * get_page 返回 { results: [{ blockId, pageId, pageName }] }
+   * 从 pageName 提取 YYYY-MM-DD 日志时间
+   */
+  async getPages(repoId: string, blockIds: number[]): Promise<Record<number, string>> {
+    if (!blockIds.length) return {};
+    try {
+      const res = (await this.mcp.call("get_page", { repoId, blockIds })) as {
+        success?: boolean;
+        results?: { blockId: number; pageName?: string }[];
+      };
+      const map: Record<number, string> = {};
+      for (const r of res.results ?? []) {
+        const match = /(\d{4}-\d{2}-\d{2})/.exec(r.pageName ?? "");
+        if (match) map[r.blockId] = match[1]!;
+      }
+      return map;
+    } catch (err) {
+      console.warn(`[mcp] get_page 失败：`, err);
+      return {};
+    }
+  }
+
+  /** 内部：按标签名查 block id（优先用 tagId 查询） */
   protected async queryBlockIds(tagName: string): Promise<number[]> {
     const res = await this.queryBlocks(this.repoId, {
       kind: 100,
@@ -158,7 +197,13 @@ export function extractTags(text: string): string[] {
 }
 
 /** 解析 get_blocks_text 返回的 JSON 字符串 → UrlEntry 列表（去重 + 过滤非链接块） */
-export function parseEntries(rawText: string, repoId: string, repoName: string): UrlEntry[] {
+export function parseEntries(
+  rawText: string,
+  repoId: string,
+  repoName: string,
+  extraTagsMap?: Map<number, string[]>,
+  dateMap?: Record<number, string>,
+): UrlEntry[] {
   const parsed = JSON.parse(rawText);
   const results: { id?: number; blocks?: RawBlock[] }[] = parsed.results ?? [];
   const seen = new Set<number>();
@@ -171,14 +216,23 @@ export function parseEntries(rawText: string, repoId: string, repoName: string):
       seen.add(b.id);
       const tu = extractTitleUrl(text);
       if (!tu) continue;
+
+      const tags = extractTags(text);
+      if (extraTagsMap && extraTagsMap.has(b.id)) {
+        for (const t of extraTagsMap.get(b.id)!) {
+          if (!tags.includes(t)) tags.push(t);
+        }
+      }
+
       entries.push({
         id: String(b.id),
         title: tu.title,
         url: tu.url,
         cover: extractCover(text),
-        tags: extractTags(text),
+        tags,
         repoId,
         repoName,
+        date: dateMap ? dateMap[b.id] || "" : undefined,
       });
     }
   }

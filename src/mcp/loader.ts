@@ -1,37 +1,115 @@
 /**
  * 数据加载编排：从 MCP 拉取链接条目 → 供 popup/分组/搜索使用。
  *
- * ⚠ 实测修正（2026-10-15，与 @12 调研有出入）：
- * 1. query_blocks 的 description.q 结构是 `{kind:4/8, ...}` 直接平铺，
- *    @12 报告里的 `{kind:100, conditions:[...]}` 实测报 invalid_arguments（schema 无 100）。
- * 2. 标签数据现状：网址=0 条、哔哩哔哩=0 条（所有 repoId 实测），Youtube=2 条。
- *    @12 报告的 23/320 条已不存在（疑似调研后被清理）。故不按标签查作数据源。
- * 3. get_blocks_text 返回 {success, repoId, results:[{id, blocks:[...]}]}，
- *    blocks 是树形展开（含 children 子块），需按 id 去重 + 过滤非链接块。
- * 4. 数据源 = kind:8 文本搜 "http"（raw:true），分页拉全量；分组按 URL 域名。
- *
- * 分组规则（@0 拍板）：标签优先 > 域名兜底 > other。标签当前不可靠，实际生效的是域名兜底。
+ * 核心机制（实测 2026-10-15）：
+ * 1. 目标标签引用查询：
+ *    - 网址 (tag 43) -> 23 条
+ *    - 哔哩哔哩 (tag 6560) -> 320 条
+ *    - Youtube (tag 7659) -> 19 条
+ *    走 query_blocks {q:{kind:100, conditions:[{kind:6, blockId:tagId}]}}
+ * 2. other 分组：通过 kind:8 搜 "http" / "https" 提取散落链接，排除上述三类标签块。
+ * 3. 收藏日期：批量调用 get_page 获取块所在日志页日期（YYYY-MM-DD）。
+ * 4. 排序：按日志日期降序排列（最新收藏的排在最前）。
  */
 import type { McpConfig, UrlEntry } from "./client";
 import { RealMcpClient, parseEntries } from "./realClient";
 
-const PAGE_SIZE = 2000;
-const MAX_PAGES = 100;
+/** 目标标签与其固定块 ID */
+const TARGET_TAGS = [
+  { name: "网址", tagId: 43 },
+  { name: "哔哩哔哩", tagId: 6560 },
+  { name: "Youtube", tagId: 7659 },
+] as const;
 
-/** 分页拉全量链接条目（kind:8 搜 http，翻到空页或满页） */
-async function fetchAllLinks(client: RealMcpClient, repoId: string): Promise<UrlEntry[]> {
-  const all = new Map<string, UrlEntry>();
-  for (let page = 1; page <= MAX_PAGES; page++) {
-    const res = await client.queryByText(repoId, "http", page, PAGE_SIZE);
-    const ids: number[] = res.resultIds ?? [];
-    if (!ids.length) break;
-    const rawText = await client.getBlocksText(repoId, ids);
-    for (const e of parseEntries(rawText, repoId, "")) {
-      if (!all.has(e.id)) all.set(e.id, e);
-    }
-    if (ids.length < PAGE_SIZE) break; // 最后一页
+const BATCH_SIZE = 150;
+
+/** 分批查询 */
+function chunkArray<T>(items: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let i = 0; i < items.length; i += size) {
+    chunks.push(items.slice(i, i + size));
   }
-  return [...all.values()];
+  return chunks;
+}
+
+/** 拉取单个仓库的全部条目 */
+async function fetchRepoEntries(client: RealMcpClient, repoId: string, repoName: string): Promise<UrlEntry[]> {
+  const extraTagsMap = new Map<number, string[]>();
+  const targetTagIds = new Set<number>();
+
+  // 1. 查询三个目标标签的块 ID
+  for (const { name, tagId } of TARGET_TAGS) {
+    try {
+      const ids = await client.queryBlocksByTagId(repoId, tagId, 1, 2000);
+      for (const id of ids) {
+        targetTagIds.add(id);
+        const list = extraTagsMap.get(id) ?? [];
+        if (!list.includes(name)) list.push(name);
+        extraTagsMap.set(id, list);
+      }
+    } catch (err) {
+      console.warn(`[loader] 标签 ${name}(${tagId}) 查询失败：`, err);
+    }
+  }
+
+  // 2. 查询 other 散落链接（文本搜 http / https）
+  const otherIds = new Set<number>();
+  for (const term of ["http", "https"]) {
+    try {
+      const res = await client.queryByText(repoId, term, 1, 2000);
+      for (const id of res.resultIds ?? []) {
+        if (!targetTagIds.has(id)) {
+          otherIds.add(id);
+        }
+      }
+    } catch (err) {
+      console.warn(`[loader] other 搜索 (${term}) 失败：`, err);
+    }
+  }
+
+  // 3. 合并所有需要解析的块 ID（去重）
+  const allBlockIds = Array.from(new Set([...targetTagIds, ...otherIds]));
+  if (!allBlockIds.length) return [];
+
+  // 4. 分批拉取正文与日志时间
+  const chunks = chunkArray(allBlockIds, BATCH_SIZE);
+  const allEntries: UrlEntry[] = [];
+  const seenEntries = new Set<string>();
+
+  for (const chunk of chunks) {
+    try {
+      const [rawText, dateMap] = await Promise.all([
+        client.getBlocksText(repoId, chunk),
+        client.getPages(repoId, chunk),
+      ]);
+
+      const entries = parseEntries(rawText, repoId, repoName, extraTagsMap, dateMap);
+      for (const e of entries) {
+        if (!seenEntries.has(e.id)) {
+          seenEntries.add(e.id);
+          allEntries.push(e);
+        }
+      }
+    } catch (err) {
+      console.warn(`[loader] 分批解析块数据失败（块数：${chunk.length}）：`, err);
+    }
+  }
+
+  // 5. 按日志日期降序排列（最新在前），日期相同或缺失时按 blockId 降序
+  allEntries.sort((a, b) => {
+    const da = a.date ?? "";
+    const db = b.date ?? "";
+    if (da && db) {
+      if (da !== db) return db.localeCompare(da);
+    } else if (da) {
+      return -1;
+    } else if (db) {
+      return 1;
+    }
+    return (Number(b.id) || 0) - (Number(a.id) || 0);
+  });
+
+  return allEntries;
 }
 
 /** 按配置加载全部链接条目（支持多 repoId，逗号分隔） */
@@ -42,11 +120,12 @@ export async function loadBookmarkEntries(cfg: McpConfig): Promise<UrlEntry[]> {
     .filter(Boolean)
     .map((id, i) => ({ id, name: `repo-${i + 1}` }));
   if (!repos.length) return [];
+
   const all = new Map<string, UrlEntry>();
   for (const repo of repos) {
     const client = new RealMcpClient({ endpoint: cfg.endpoint, token: cfg.token, repoId: repo.id }, repo.name);
     try {
-      const entries = await fetchAllLinks(client, repo.id);
+      const entries = await fetchRepoEntries(client, repo.id, repo.name);
       for (const e of entries) {
         if (!all.has(e.id)) all.set(e.id, e);
       }
@@ -54,5 +133,22 @@ export async function loadBookmarkEntries(cfg: McpConfig): Promise<UrlEntry[]> {
       console.warn(`[loader] repo ${repo.id} 加载失败：`, err);
     }
   }
-  return [...all.values()];
+
+  const result = Array.from(all.values());
+
+  // 最终整体保证按日志日期倒序
+  result.sort((a, b) => {
+    const da = a.date ?? "";
+    const db = b.date ?? "";
+    if (da && db) {
+      if (da !== db) return db.localeCompare(da);
+    } else if (da) {
+      return -1;
+    } else if (db) {
+      return 1;
+    }
+    return (Number(b.id) || 0) - (Number(a.id) || 0);
+  });
+
+  return result;
 }

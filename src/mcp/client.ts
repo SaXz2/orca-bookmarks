@@ -19,6 +19,8 @@ export interface UrlEntry {
   /** 所属笔记库 id 与名称（跨库来源标识） */
   repoId: string;
   repoName: string;
+  /** 收藏日志日期（如 2026-09-08，从所在日志页提取） */
+  date?: string;
 }
 
 export interface McpConfig {

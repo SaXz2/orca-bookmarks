@@ -5,8 +5,8 @@ const KEY = "mcpConfig";
 
 export const DEFAULT_CONFIG: McpConfig = {
   endpoint: "http://localhost:18672/mcp",
-  token: "",
-  repoId: "",
+  token: "orca-mcp",
+  repoId: "iwy5nfalj9l1y",
 };
 
 export async function loadConfig(): Promise<McpConfig> {
