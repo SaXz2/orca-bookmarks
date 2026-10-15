@@ -14,8 +14,12 @@ export interface UrlEntry {
   url: string;
   /** 封面图 URL；无封面则为 null */
   cover: string | null;
-  /** 所属标签名（原始拼写，如 "哔哩哔哩" / "网址"） */
+  /** 所属标签名（如 "哔哩哔哩" / "网址" / "游戏网址" 等） */
   tags: string[];
+  /** 标签属性键值对（如 { tags: "爱情|男生|恋爱", "UP主": "小太阳张二毛", ... }） */
+  tagProperties?: Record<string, string>;
+  /** 块原始文本或正文内容（供深入全文搜索匹配） */
+  rawText?: string;
   /** 所属笔记库 id 与名称（跨库来源标识） */
   repoId: string;
   repoName: string;

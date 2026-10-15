@@ -152,51 +152,166 @@ interface RawBlock {
   type?: string;
 }
 
-/** 判断块是否是链接条目：含 markdown 链接，或含裸 URL 且非纯 image 块 */
+/** 判断块是否是链接条目：含 markdown 链接，或含 http URL 且非纯本地图片 */
 export function isLinkBlock(text: string): boolean {
-  if (/\[([^\]]*)\]\(([^)]+)\)/.test(text)) return true;
-  if (/^https?:\/\/\S+$/m.test(text.trim())) return true;
+  if (/\]\((https?:\/\/[^)\s]+)\)/.test(text)) return true;
+  if (/\[([^\]]*)\]\((https?:\/\/[^)]+)\)/.test(text)) return true;
+  if (/(https?:\/\/[^\s),，;；]+)/.test(text)) {
+    // 排除纯本地相对图片引用（如 image: ./PixPin...）
+    if (/^\s*image:\s*\.\//.test(text)) return false;
+    return true;
+  }
   return false;
 }
 
-/** 从块文本提取标题/URL（markdown 链接优先，否则第一个 http URL） */
+/**
+ * 从文本提取标题与 URL。
+ * 1. 优先提取 Markdown 链接：](https?://...)，向前回溯匹配对应层次的 [，完美支持 [[双重括号]标题](url) 或 [标题 [ 内嵌括号 ]](url)。
+ * 2. 次优先提取裸 URL 与周围第一行作为标题（如 柯南 #番剧... 或 ZERO-G #动画公司...）。
+ */
 export function extractTitleUrl(text: string): { title: string; url: string } | null {
-  const m = /\[([^\]]*)\]\(([^)]+)\)/.exec(text);
-  if (m) return { title: m[1] || m[2], url: m[2] };
-  const u = /(https?:\/\/[^\s)]+)/.exec(text);
-  if (u) return { title: u[1], url: u[1] };
+  // 1. Markdown 链接回溯解析
+  const linkPattern = /\]\((https?:\/\/[^)\s]+)\)/g;
+  let match: RegExpExecArray | null;
+  while ((match = linkPattern.exec(text)) !== null) {
+    const url = match[1];
+    const closeBracketIdx = match.index; // ']' 所在位置
+    let depth = 0;
+    let openBracketIdx = -1;
+    for (let i = closeBracketIdx; i >= 0; i--) {
+      if (text[i] === "]") depth++;
+      else if (text[i] === "[") {
+        depth--;
+        if (depth === 0) {
+          openBracketIdx = i;
+          break;
+        }
+      }
+    }
+    if (openBracketIdx !== -1) {
+      let title = text.slice(openBracketIdx + 1, closeBracketIdx).trim();
+      // 清理前缀未配对的单个 [
+      if (title.startsWith("[") && !title.includes("]")) {
+        title = title.slice(1).trim();
+      }
+      return { title: title || url, url };
+    }
+  }
+
+  // 兜底一般 markdown 正则
+  const simpleM = /\[([^\]]*)\]\(([^)]+)\)/.exec(text);
+  if (simpleM) {
+    return { title: simpleM[1].trim() || simpleM[2].trim(), url: simpleM[2].trim() };
+  }
+
+  // 2. 裸 URL 场景：提取 URL，并将周围有效文本作为标题
+  const u = /(https?:\/\/[^\s),，;；]+)/.exec(text);
+  if (u) {
+    const url = u[1];
+    // 寻找标题：在包含 URL 或前面的文本中提取
+    const lines = text.split("\n");
+    for (const line of lines) {
+      let clean = line.replace(/https?:\/\/[^\s),，;；]+/g, "").trim();
+      // 提取标签前的主标题（例如 "ZERO-G #动画公司" 或 "名侦探柯南 #番剧"）
+      if (clean.includes("#")) {
+        clean = clean.split("#")[0].trim();
+      }
+      // 提取属性冒号前的标题
+      clean = clean.replace(/[a-zA-Z0-9_\u4e00-\u9fa5]+:\s*[^;\n]+;?/g, "").trim();
+      // 取第一个逗号前的词
+      if (clean.includes(",") || clean.includes("，")) {
+        clean = clean.split(/[,，]/)[0].trim();
+      }
+      if (clean && clean.length >= 2 && !clean.toLowerCase().startsWith("image:")) {
+        return { title: clean, url };
+      }
+    }
+    return { title: url, url };
+  }
+
   return null;
 }
 
-/** 从块文本提取封面（img: 追加行） */
-export function extractCover(text: string): string | null {
-  const m = /^img:\s*(.+?);/m.exec(text);
-  return m ? m[1]!.trim() : null;
+/**
+ * 从文本与 URL 提取封面：
+ * 1. img: http... 属性
+ * 2. 海报: http... 属性
+ * 3. Youtube 视频 URL 自动生成高清缩略图 (https://i.ytimg.com/vi/${id}/hqdefault.jpg)
+ * 4. 文本中的 i.ytimg.com 或图片扩展名 URL (jpg, jpeg, png, webp, avif, gif)
+ */
+export function extractCover(text: string, mainUrl?: string): string | null {
+  // 1. img: 属性
+  const imgM = /img:\s*(https?:\/\/[^\s;]+)/i.exec(text);
+  if (imgM) return imgM[1].trim();
+
+  // 2. 海报: 属性
+  const posterM = /海报:\s*(https?:\/\/[^\s;]+)/i.exec(text);
+  if (posterM) return posterM[1].trim();
+
+  // 3. Youtube 链接自动计算封面
+  if (mainUrl) {
+    const ytM = /(?:v=|youtu\.be\/|shorts\/)([a-zA-Z0-9_-]{11})/.exec(mainUrl);
+    if (ytM) {
+      return `https://i.ytimg.com/vi/${ytM[1]}/hqdefault.jpg`;
+    }
+  }
+
+  // 4. 文本中的 Youtube 缩略图
+  const ytImg = /(https?:\/\/i\.ytimg\.com\/vi\/[^\s,;#)]+)/.exec(text);
+  if (ytImg) return ytImg[1].trim();
+
+  // 5. 文本中的其他通用图片 URL
+  const anyImg = /(https?:\/\/[^\s,;#)]+?\.(?:jpg|jpeg|png|webp|avif|gif))/i.exec(text);
+  if (anyImg) return anyImg[1].trim();
+
+  return null;
+}
+
+/** 提取文本中的标签属性键值对（例如 key: value;） */
+export function extractTagProperties(text: string): Record<string, string> {
+  const props: Record<string, string> = {};
+  const re = /([a-zA-Z0-9_\u4e00-\u9fa5]+):\s*([^;\n]+);?/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    const k = m[1].trim();
+    const v = m[2].trim();
+    if (k && v && !/^https?$/i.test(k)) {
+      props[k] = v;
+    }
+  }
+  return props;
 }
 
 /**
  * 从块文本提取标签（#tag）。
- * 含冒号的（如 #哔哩UP：夏日幻听MCE）也提取冒号后部分进 tags——
- * 分组不受影响（classify 只查固定标签名），但搜索可覆盖 UP 主名。
+ * 清理掉括号中的 URL（避免将 URL 的 #hash 误识别为标签）；
+ * 支持提取冒号后半部分（如 #哔哩UP：小太阳 → 提取 哔哩UP：小太阳 与 小太阳）。
  */
 export function extractTags(text: string): string[] {
+  // 过滤括号内的 URL，防止 https://xxx#anchor 造成误判
+  const clean = text
+    .replace(/\]\([^\)]+\)/g, "]")
+    .replace(/\(https?:\/\/[^\)]+\)/g, "");
+
   const tags: string[] = [];
-  const re = /#([^\s,#]+)/g;
+  const re = /#([^\s,#，]+)/g;
   let m: RegExpExecArray | null;
-  while ((m = re.exec(text)) !== null) {
-    const t = m[1]!;
+  while ((m = re.exec(clean)) !== null) {
+    let t = m[1].trim().replace(/[),;，。]+$/, "").trim();
+    if (!t) continue;
+    if (!tags.includes(t)) tags.push(t);
+
     if (/[:：]/.test(t)) {
-      // #哔哩UP：xxx → 提取冒号后部分（UP 主名）供搜索
       const afterColon = t.split(/[:：]/).slice(1).join(":").trim();
-      if (afterColon) tags.push(afterColon);
-    } else {
-      tags.push(t);
+      if (afterColon && !tags.includes(afterColon)) {
+        tags.push(afterColon);
+      }
     }
   }
   return tags;
 }
 
-/** 解析 get_blocks_text 返回的 JSON 字符串 → UrlEntry 列表（去重 + 过滤非链接块） */
+/** 解析 get_blocks_text 返回的 JSON 字符串 → UrlEntry 列表（按请求块去重，不重复生成子块） */
 export function parseEntries(
   rawText: string,
   repoId: string,
@@ -206,35 +321,87 @@ export function parseEntries(
 ): UrlEntry[] {
   const parsed = JSON.parse(rawText);
   const results: { id?: number; blocks?: RawBlock[] }[] = parsed.results ?? [];
-  const seen = new Set<number>();
+  const seen = new Set<string>();
   const entries: UrlEntry[] = [];
-  for (const r of results) {
-    for (const b of r.blocks ?? []) {
-      const text = b.text ?? "";
-      if (!isLinkBlock(text)) continue;
-      if (seen.has(b.id)) continue;
-      seen.add(b.id);
-      const tu = extractTitleUrl(text);
-      if (!tu) continue;
 
-      const tags = extractTags(text);
-      if (extraTagsMap && extraTagsMap.has(b.id)) {
-        for (const t of extraTagsMap.get(b.id)!) {
-          if (!tags.includes(t)) tags.push(t);
+  for (const r of results) {
+    const targetId = r.id;
+    const blocks = r.blocks ?? [];
+    if (!blocks.length) continue;
+
+    // 优先取目标主块，找不到则取第一块
+    const mainBlock = (targetId ? blocks.find((b) => b.id === targetId) : null) ?? blocks[0];
+    const mainText = mainBlock.text ?? "";
+
+    // 收集全部关联文本（主块 + 子块）作为检索上下文
+    const allTexts = blocks.map((b) => b.text ?? "").filter(Boolean);
+    const combinedText = allTexts.join("\n");
+
+    // 检查是否有链接
+    let tu = isLinkBlock(mainText) ? extractTitleUrl(mainText) : null;
+    let chosenBlock = mainBlock;
+
+    // 如果主块无链接，但在子块中有链接（例如任务容器块），尝试从首个有链接的子块提取
+    if (!tu) {
+      for (const b of blocks) {
+        const bt = b.text ?? "";
+        if (isLinkBlock(bt)) {
+          tu = extractTitleUrl(bt);
+          if (tu) {
+            chosenBlock = b;
+            break;
+          }
         }
       }
-
-      entries.push({
-        id: String(b.id),
-        title: tu.title,
-        url: tu.url,
-        cover: extractCover(text),
-        tags,
-        repoId,
-        repoName,
-        date: dateMap ? dateMap[b.id] || "" : undefined,
-      });
     }
+
+    if (!tu) continue;
+
+    const blockIdStr = String(chosenBlock.id || targetId || 0);
+    if (seen.has(blockIdStr)) continue;
+    seen.add(blockIdStr);
+
+    // 提取封面（优先主块，主块没有再看子块与全局上下文）
+    let cover = extractCover(chosenBlock.text ?? "", tu.url);
+    if (!cover && combinedText !== (chosenBlock.text ?? "")) {
+      cover = extractCover(combinedText, tu.url);
+    }
+
+    // 提取标签
+    const tags = extractTags(chosenBlock.text ?? "");
+    const blockNum = Number(blockIdStr);
+    if (extraTagsMap) {
+      const extra1 = extraTagsMap.get(blockNum);
+      if (extra1) {
+        for (const t of extra1) if (!tags.includes(t)) tags.push(t);
+      }
+      if (targetId && targetId !== blockNum) {
+        const extra2 = extraTagsMap.get(targetId);
+        if (extra2) {
+          for (const t of extra2) if (!tags.includes(t)) tags.push(t);
+        }
+      }
+    }
+
+    // 提取标签属性
+    const tagProperties = extractTagProperties(combinedText);
+
+    // 日期
+    const date = dateMap ? dateMap[blockNum] || (targetId ? dateMap[targetId] || "" : "") : undefined;
+
+    entries.push({
+      id: blockIdStr,
+      title: tu.title,
+      url: tu.url,
+      cover,
+      tags,
+      tagProperties,
+      rawText: combinedText,
+      repoId,
+      repoName,
+      date: date || undefined,
+    });
   }
+
   return entries;
 }

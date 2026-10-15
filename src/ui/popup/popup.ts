@@ -262,6 +262,31 @@ function renderItem(e: UrlEntry): HTMLElement {
   meta.appendChild(url);
 
   body.append(title, meta);
+
+  // 渲染标签胶囊（展示前4个有效标签，点击可快速触发连通搜索）
+  const validTags = (e.tags ?? []).filter((t) => t && t.length <= 25 && !/^https?:\/\//i.test(t));
+  if (validTags.length > 0) {
+    const tagsWrap = document.createElement("div");
+    tagsWrap.className = "popup-item__tags";
+    for (const tag of validTags.slice(0, 4)) {
+      const tagEl = document.createElement("span");
+      tagEl.className = "popup-tag";
+      tagEl.textContent = `#${tag}`;
+      tagEl.title = `点击筛选 #${tag}`;
+      tagEl.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        const sInput = el<HTMLInputElement>("search");
+        sInput.value = tag;
+        query = tag;
+        renderList();
+        sInput.focus();
+      });
+      tagsWrap.appendChild(tagEl);
+    }
+    body.appendChild(tagsWrap);
+  }
+
   a.append(media, body);
   return a;
 }

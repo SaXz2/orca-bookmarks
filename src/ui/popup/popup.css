@@ -277,6 +277,33 @@ body {
   white-space: nowrap;
 }
 
+.popup-item__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 3px;
+}
+.popup-tag {
+  font-size: 10px;
+  line-height: 1.2;
+  color: var(--popup-muted);
+  background: var(--popup-hover-bg);
+  border: 1px solid var(--popup-border);
+  border-radius: 4px;
+  padding: 1px 5px;
+  white-space: nowrap;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.popup-tag:hover {
+  background: var(--popup-accent);
+  color: #fff;
+  border-color: var(--popup-accent);
+}
+
 /* 封面 / favicon（cover.ts 产出的元素） */
 .cover-img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .cover-placeholder { font-size: 18px; color: var(--popup-muted); }
