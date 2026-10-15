@@ -15,6 +15,7 @@ export interface UiState {
   collapsedFolders?: string[];
   popupWidth?: number;
   popupHeight?: number;
+  customFolders?: string[];
 }
 
 interface CacheWrapper {

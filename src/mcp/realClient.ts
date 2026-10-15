@@ -341,6 +341,68 @@ export function extractTags(text: string): string[] {
   return tags;
 }
 
+/**
+ * 从块及其子节点中提取实质性笔记摘要/总结说明：
+ * 1. 优先提取子节点的 AI 总结、学习笔记段落；
+ * 2. 次优先提取属性中的 description；
+ * 3. 再次提取笔记在链接之外撰写的手写备注说明（过滤掉链接、标签与基础属性）。
+ */
+export function extractNoteSnippet(blocks: RawBlock[], mainBlockId: number): string | undefined {
+  // 1. 优先看子块（除主块以外的块）
+  const childBlocks = blocks.filter((b) => b.id !== mainBlockId);
+  for (const b of childBlocks) {
+    const txt = (b.text ?? "").trim();
+    if (!txt || txt === "...") continue;
+    if (/^\s*(?:image|img|海报):/i.test(txt)) continue;
+
+    // 识别长文本段落（如 AI 视频总结、随笔记录）
+    if (txt.includes("视频总结") || txt.length >= 25) {
+      let clean = txt
+        .replace(/视频总结/g, "")
+        .replace(/#AI Result/gi, "")
+        .replace(/https?:\/\/[^\s),，;；"]+/g, "")
+        .replace(/#([^\s,#，]+)/g, "")
+        .replace(/\[+[^\]]*\]+/g, "")
+        .replace(/[,，;；\s]+/g, " ")
+        .trim();
+
+      if (clean.length >= 15) {
+        return clean.length > 120 ? `${clean.slice(0, 120)}…` : clean;
+      }
+    }
+  }
+
+  // 2. 检查主块是否有 description 属性
+  const mainB = blocks.find((b) => b.id === mainBlockId) ?? blocks[0];
+  if (mainB) {
+    const txt = mainB.text ?? "";
+    const descM = /description:\s*([^;\n]+)/i.exec(txt);
+    if (descM) {
+      const desc = descM[1].trim();
+      if (desc.length >= 6) {
+        return desc.length > 120 ? `${desc.slice(0, 120)}…` : desc;
+      }
+    }
+
+    // 3. 提取除链接外手写说明
+    let clean = txt
+      .replace(/\]\([^\)]+\)/g, "")
+      .replace(/\(https?:\/\/[^\)]+\)/g, "")
+      .replace(/\[+[^\]]*\]+/g, "")
+      .replace(/https?:\/\/[^\s),，;；"]+/g, "")
+      .replace(/#([^\s,#，]+)/g, "")
+      .replace(/[a-zA-Z0-9_\u4e00-\u9fa5]+:\s*[^;\n]+;?/g, "")
+      .replace(/[,，;；\s]+/g, " ")
+      .trim();
+
+    if (clean && clean.length >= 4 && !clean.toLowerCase().startsWith("image:")) {
+      return clean.length > 120 ? `${clean.slice(0, 120)}…` : clean;
+    }
+  }
+
+  return undefined;
+}
+
 /** 解析 get_blocks_text 返回的 JSON 字符串 → UrlEntry 列表（按请求块去重，不重复生成子块） */
 export function parseEntries(
   rawText: string,
@@ -419,6 +481,9 @@ export function parseEntries(
     // 日期
     const date = dateMap ? dateMap[blockNum] || (targetId ? dateMap[targetId] || "" : "") : undefined;
 
+    // 提取笔记内容/子块总结摘要
+    const snippet = extractNoteSnippet(blocks, chosenBlock.id || targetId || 0);
+
     entries.push({
       id: blockIdStr,
       title: tu.title,
@@ -427,6 +492,7 @@ export function parseEntries(
       tags,
       tagProperties,
       rawText: combinedText,
+      snippet,
       repoId,
       repoName,
       date: date || undefined,

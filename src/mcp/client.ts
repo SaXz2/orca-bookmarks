@@ -25,6 +25,8 @@ export interface UrlEntry {
   repoName: string;
   /** 收藏日志日期（如 2026-09-08，从所在日志页提取） */
   date?: string;
+  /** 笔记摘要/上下文说明（父节点或子节点总结、手写笔记等） */
+  snippet?: string;
 }
 
 export interface McpConfig {

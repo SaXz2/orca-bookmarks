@@ -25,39 +25,60 @@ export interface FolderNode {
 
 export type TreeNode = FolderNode | BookmarkNode;
 
-/** 文件夹输出顺序 */
-export const FOLDER_ORDER = ["网址", "哔哩哔哩", "Youtube", "other"] as const;
-export type FolderName = (typeof FOLDER_ORDER)[number];
+/** 基础内置文件夹顺序 */
+export const DEFAULT_FOLDERS = ["网址", "哔哩哔哩", "Youtube", "other"] as const;
+export const FOLDER_ORDER = DEFAULT_FOLDERS;
+export type FolderName = string;
 
 function hasTag(e: UrlEntry, tag: string): boolean {
-  return e.tags.some((t) => t.toLowerCase() === tag.toLowerCase());
+  return (e.tags ?? []).some((t) => t.toLowerCase() === tag.toLowerCase());
 }
 
 /**
- * 纯标签分类（严格无域名兜底）：
- * - 含 "网址" 标签 → "网址"
- * - 含 "哔哩哔哩" 标签 → "哔哩哔哩"
- * - 含 "Youtube" 标签 → "Youtube"
- * - 其余 → "other"
+ * 标签分类（支持自定义标签优先归入对应文件夹）：
+ * 1. 若配置了自定义标签（例如 ["游戏网址", "番剧"]），且条目命中该标签，则归入该自定义文件夹；
+ * 2. 否则按基础标签：
+ *    - 含 "网址" 标签 → "网址"
+ *    - 含 "哔哩哔哩" 标签 → "哔哩哔哩"
+ *    - 含 "Youtube" 标签 → "Youtube"
+ *    - 其余 → "other"
  */
-export function classify(e: UrlEntry): FolderName {
+export function classify(e: UrlEntry, customFolders: string[] = []): FolderName {
+  if (customFolders && customFolders.length > 0) {
+    for (const cf of customFolders) {
+      if (hasTag(e, cf)) {
+        return cf;
+      }
+    }
+  }
+
   if (hasTag(e, "网址")) return "网址";
   if (hasTag(e, "哔哩哔哩") || hasTag(e, "bilibili")) return "哔哩哔哩";
   if (hasTag(e, "Youtube") || hasTag(e, "youtube")) return "Youtube";
   return "other";
 }
 
-/** 构建文件夹树（按 FOLDER_ORDER 排序，始终输出全部文件夹，空文件夹 children 为空数组） */
-export function buildBookmarkTree(entries: UrlEntry[]): FolderNode[] {
-  const byFolder = new Map<FolderName, BookmarkNode[]>();
-  for (const name of FOLDER_ORDER) {
+/** 获取全部文件夹列表（自定义标签文件夹排在 other 之前） */
+export function getAllFolders(customFolders: string[] = []): string[] {
+  const custom = customFolders.filter((c) => !DEFAULT_FOLDERS.includes(c as any));
+  return ["网址", "哔哩哔哩", "Youtube", ...custom, "other"];
+}
+
+/** 构建文件夹树（始终输出全部文件夹，空文件夹 children 为空数组） */
+export function buildBookmarkTree(entries: UrlEntry[], customFolders: string[] = []): FolderNode[] {
+  const folders = getAllFolders(customFolders);
+  const byFolder = new Map<string, BookmarkNode[]>();
+  for (const name of folders) {
     byFolder.set(name, []);
   }
   for (const e of entries) {
-    const f = classify(e);
+    const f = classify(e, customFolders);
+    if (!byFolder.has(f)) {
+      byFolder.set(f, []);
+    }
     byFolder.get(f)!.push({ kind: "bookmark", entry: e });
   }
-  return FOLDER_ORDER.map((name) => ({
+  return folders.map((name) => ({
     kind: "folder" as const,
     name,
     children: byFolder.get(name) ?? [],

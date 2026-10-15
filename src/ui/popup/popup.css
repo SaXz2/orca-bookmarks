@@ -55,9 +55,9 @@
 * { box-sizing: border-box; }
 
 html, body {
-  min-width: 360px;
+  min-width: 380px;
   max-width: 800px;
-  min-height: 400px;
+  min-height: 460px;
   max-height: 600px;
   margin: 0;
   padding: 0;
@@ -65,8 +65,12 @@ html, body {
   box-sizing: border-box;
 }
 
+html {
+  height: 100%;
+}
+
 body {
-  width: 480px;
+  width: 500px;
   height: 580px;
   font: 13px/1.5 system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
   background: var(--popup-bg);
@@ -334,6 +338,23 @@ body {
   white-space: nowrap;
 }
 
+/* 笔记内容摘要（父/子节点内容、AI总结段落预览） */
+.popup-item__snippet {
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--popup-muted);
+  background: var(--popup-hover-bg);
+  border-left: 2px solid var(--popup-accent);
+  border-radius: 0 4px 4px 0;
+  padding: 3px 6px;
+  margin-top: 4px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-break: break-all;
+}
+
 .popup-item__tags {
   display: flex;
   flex-wrap: wrap;
@@ -387,26 +408,72 @@ body {
   position: absolute;
   right: 0;
   bottom: 0;
-  width: 14px;
-  height: 14px;
+  width: 22px;
+  height: 22px;
   cursor: nwse-resize;
-  z-index: 100;
+  z-index: 1000;
   display: flex;
   align-items: flex-end;
   justify-content: flex-end;
-  padding: 2px;
+  padding: 3px;
   user-select: none;
+  touch-action: none;
 }
 .popup-resizer::after {
   content: "";
-  width: 6px;
-  height: 6px;
-  border-right: 2px solid var(--popup-muted);
-  border-bottom: 2px solid var(--popup-muted);
-  opacity: 0.5;
-  transition: opacity 0.15s ease;
+  width: 10px;
+  height: 10px;
+  border-right: 3px solid var(--popup-muted);
+  border-bottom: 3px solid var(--popup-muted);
+  border-radius: 1px;
+  opacity: 0.6;
+  transition: all 0.15s ease;
 }
-.popup-resizer:hover::after {
+.popup-resizer:hover::after,
+.popup-resizer--active::after {
   opacity: 1;
   border-color: var(--popup-accent);
+  transform: scale(1.15);
+}
+
+/* ── 标签右键/点击操作菜单或胶囊操作 ─────────────────────── */
+.popup-tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.popup-tag-chip__del {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  font-size: 11px;
+  line-height: 1;
+  border-radius: 50%;
+  color: inherit;
+  opacity: 0.7;
+  cursor: pointer;
+  margin-left: 2px;
+}
+.popup-tag-chip__del:hover {
+  opacity: 1;
+  background: rgba(0, 0, 0, 0.15);
+}
+.popup-tabs__add-btn {
+  flex-shrink: 0;
+  border: 1px dashed var(--popup-border);
+  background: transparent;
+  color: var(--popup-muted);
+  font: inherit;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.popup-tabs__add-btn:hover {
+  border-color: var(--popup-accent);
+  color: var(--popup-accent);
+  background: var(--popup-hover-bg);
 }

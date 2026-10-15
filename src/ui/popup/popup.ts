@@ -8,13 +8,13 @@
 import { loadBookmarkEntries } from "../../mcp/loader";
 import { loadConfig, isConfigured } from "../../store/config";
 import { loadCachedEntries, saveCachedEntries, loadUiState, saveUiState } from "../../store/cache";
-import { classify, FOLDER_ORDER, type FolderName } from "../../bookmarks/bookmarkTree";
+import { classify, getAllFolders, type FolderName } from "../../bookmarks/bookmarkTree";
 import { buildIndex, search, type SearchIndex } from "../../search/search";
 import { renderCover, renderFavicon } from "../cover";
 import type { UrlEntry } from "../../mcp/client";
 
-/** 文件夹顺序（与 bookmarkTree 纯标签分组规则一致） */
-const FOLDERS = FOLDER_ORDER;
+let customFolders: string[] = [];
+let folders: string[] = getAllFolders();
 type FolderId = FolderName;
 type TabId = FolderId | "all";
 
@@ -61,8 +61,14 @@ async function load(): Promise<void> {
     // 恢复历史浏览状态与窗口大小
     if (uiState) {
       if (uiState.popupWidth && uiState.popupHeight) {
+        document.documentElement.style.width = `${uiState.popupWidth}px`;
+        document.documentElement.style.height = `${uiState.popupHeight}px`;
         document.body.style.width = `${uiState.popupWidth}px`;
         document.body.style.height = `${uiState.popupHeight}px`;
+      }
+      if (uiState.customFolders && Array.isArray(uiState.customFolders)) {
+        customFolders = uiState.customFolders;
+        folders = getAllFolders(customFolders);
       }
       if (uiState.activeTab) activeTab = uiState.activeTab as TabId;
       if (uiState.query) {
@@ -165,24 +171,46 @@ async function load(): Promise<void> {
   }
 }
 
-/** 文件夹 tabs：全部 + 四个固定文件夹，计数基于全量数据（不随搜索变化） */
+/** 文件夹 tabs：全部 + 默认文件夹 + 自定义标签文件夹，计数基于全量数据 */
 function renderTabs(): void {
   const tabsEl = el("folder-tabs");
-  const counts = new Map<FolderId, number>(FOLDERS.map((f) => [f, 0]));
+  const counts = new Map<FolderId, number>(folders.map((f) => [f, 0]));
   for (const e of entries) {
-    const f = classify(e);
+    const f = classify(e, customFolders);
     counts.set(f, (counts.get(f) ?? 0) + 1);
   }
 
   tabsEl.textContent = "";
-  const mk = (id: TabId, label: string, count: number): void => {
+  const mk = (id: TabId, label: string, count: number, isCustom = false): void => {
     const b = document.createElement("button");
     b.type = "button";
     b.className = "popup-tabs__tab" + (id === activeTab ? " popup-tabs__tab--active" : "");
     b.setAttribute("role", "tab");
     b.setAttribute("aria-selected", String(id === activeTab));
     b.dataset.tab = id;
-    b.textContent = `${label} (${count})`;
+
+    const span = document.createElement("span");
+    span.textContent = `${label} (${count})`;
+    b.appendChild(span);
+
+    // 如果是自定义标签文件夹，提供一个小删除按钮
+    if (isCustom) {
+      const delBtn = document.createElement("span");
+      delBtn.className = "popup-tag-chip__del";
+      delBtn.textContent = "×";
+      delBtn.title = `移除「${label}」文件夹分类`;
+      delBtn.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        customFolders = customFolders.filter((c) => c !== label);
+        folders = getAllFolders(customFolders);
+        if (activeTab === label) activeTab = "all";
+        void saveUiState({ customFolders, activeTab });
+        renderTabs();
+        renderList();
+      });
+      b.appendChild(delBtn);
+    }
+
     b.addEventListener("click", () => {
       activeTab = id;
       void saveUiState({ activeTab });
@@ -191,8 +219,38 @@ function renderTabs(): void {
     });
     tabsEl.appendChild(b);
   };
+
   mk("all", "全部", entries.length);
-  for (const f of FOLDERS) mk(f, f, counts.get(f) ?? 0);
+  for (const f of folders) {
+    const isCustom = customFolders.includes(f);
+    mk(f, f, counts.get(f) ?? 0, isCustom);
+  }
+
+  // 添加自定义标签文件夹按钮
+  const addBtn = document.createElement("button");
+  addBtn.type = "button";
+  addBtn.className = "popup-tabs__add-btn";
+  addBtn.textContent = "+ 自定义标签";
+  addBtn.title = "将某个标签作为专属文件夹进行归类展示";
+  addBtn.addEventListener("click", () => {
+    const name = window.prompt("请输入要作为文件夹展示的标签名（如：游戏网址 / 番剧 / AI）：");
+    if (!name) return;
+    const cleanName = name.replace(/^#/, "").trim();
+    if (!cleanName) return;
+    if (folders.includes(cleanName)) {
+      activeTab = cleanName;
+      renderTabs();
+      renderList();
+      return;
+    }
+    customFolders.push(cleanName);
+    folders = getAllFolders(customFolders);
+    activeTab = cleanName;
+    void saveUiState({ customFolders, activeTab });
+    renderTabs();
+    renderList();
+  });
+  tabsEl.appendChild(addBtn);
 
   // tablist 无障碍：左右方向键移动焦点
   const tabs = [...tabsEl.querySelectorAll<HTMLButtonElement>(".popup-tabs__tab")];
@@ -213,11 +271,11 @@ function renderList(): void {
   listEl.textContent = "";
   const matched = search(index, query);
   const visible =
-    activeTab === "all" ? matched : matched.filter((e) => classify(e) === activeTab);
+    activeTab === "all" ? matched : matched.filter((e) => classify(e, customFolders) === activeTab);
 
   if (activeTab === "all") {
-    for (const f of FOLDERS) {
-      listEl.appendChild(renderFolderGroup(f, visible.filter((e) => classify(e) === f)));
+    for (const f of folders) {
+      listEl.appendChild(renderFolderGroup(f, visible.filter((e) => classify(e, customFolders) === f)));
     }
   } else {
     for (const e of visible) listEl.appendChild(renderItem(e));
@@ -334,6 +392,15 @@ function renderItem(e: UrlEntry): HTMLElement {
 
   body.append(title, meta);
 
+  // 渲染笔记摘要/父子节点总结预览
+  if (e.snippet) {
+    const snipEl = document.createElement("div");
+    snipEl.className = "popup-item__snippet";
+    snipEl.textContent = e.snippet;
+    snipEl.title = `笔记内容预览：${e.snippet}`;
+    body.appendChild(snipEl);
+  }
+
   // 渲染标签胶囊（展示前4个有效标签，点击可快速触发连通搜索）
   const validTags = (e.tags ?? []).filter((t) => t && t.length <= 25 && !/^https?:\/\//i.test(t));
   if (validTags.length > 0) {
@@ -382,7 +449,7 @@ function renderItem(e: UrlEntry): HTMLElement {
 function initResizer(): void {
   const resizer = document.createElement("div");
   resizer.className = "popup-resizer";
-  resizer.title = "按住拖拽调整弹窗大小";
+  resizer.title = "按住拖拽调整弹窗宽高";
   document.body.appendChild(resizer);
 
   let isDragging = false;
@@ -392,32 +459,45 @@ function initResizer(): void {
   let startHeight = 0;
   let resizeTimer: number | undefined;
 
+  const setDimensions = (w: number, h: number) => {
+    // 限制最大为 800px × 600px（Chrome/Edge extension popup 硬上限）
+    const clampedW = Math.max(380, Math.min(800, w));
+    const clampedH = Math.max(460, Math.min(600, h));
+    document.documentElement.style.width = `${clampedW}px`;
+    document.documentElement.style.height = `${clampedH}px`;
+    document.body.style.width = `${clampedW}px`;
+    document.body.style.height = `${clampedH}px`;
+    return { w: clampedW, h: clampedH };
+  };
+
   resizer.addEventListener("mousedown", (ev) => {
     isDragging = true;
     startX = ev.clientX;
     startY = ev.clientY;
     startWidth = document.body.offsetWidth;
     startHeight = document.body.offsetHeight;
+    resizer.classList.add("popup-resizer--active");
     document.body.style.userSelect = "none";
     ev.preventDefault();
   });
 
   window.addEventListener("mousemove", (ev) => {
     if (!isDragging) return;
-    const newW = Math.max(360, Math.min(800, startWidth + (ev.clientX - startX)));
-    const newH = Math.max(400, Math.min(600, startHeight + (ev.clientY - startY)));
-    document.body.style.width = `${newW}px`;
-    document.body.style.height = `${newH}px`;
+    const { w, h } = setDimensions(
+      startWidth + (ev.clientX - startX),
+      startHeight + (ev.clientY - startY),
+    );
 
     window.clearTimeout(resizeTimer);
     resizeTimer = window.setTimeout(() => {
-      void saveUiState({ popupWidth: newW, popupHeight: newH });
-    }, 200);
+      void saveUiState({ popupWidth: w, popupHeight: h });
+    }, 150);
   });
 
   window.addEventListener("mouseup", () => {
     if (isDragging) {
       isDragging = false;
+      resizer.classList.remove("popup-resizer--active");
       document.body.style.userSelect = "";
       void saveUiState({
         popupWidth: document.body.offsetWidth,
