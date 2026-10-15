@@ -109,8 +109,7 @@ body {
   border-color: transparent;
 }
 
-.popup-header__options-link,
-.popup-header__music-btn {
+.popup-header__options-link {
   flex-shrink: 0;
   display: flex;
   align-items: center;
@@ -119,160 +118,13 @@ body {
   height: 32px;
   border: 1px solid var(--popup-border);
   border-radius: var(--popup-radius);
-  background: transparent;
   color: var(--popup-muted);
   text-decoration: none;
   font-size: 15px;
-  cursor: pointer;
-  transition: all 0.15s ease;
 }
-.popup-header__options-link:hover,
-.popup-header__music-btn:hover {
+.popup-header__options-link:hover {
   background: var(--popup-hover-bg);
   color: var(--popup-fg);
-  border-color: var(--popup-accent);
-}
-.popup-header__music-btn--active {
-  background: var(--popup-accent);
-  color: #fff;
-  border-color: var(--popup-accent);
-}
-
-/* ── 音乐播放器小面板 ───────────────────────────────── */
-.popup-player {
-  background: var(--popup-hover-bg);
-  border-bottom: 1px solid var(--popup-border);
-  padding: 8px 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  animation: slideDown 0.2s ease;
-}
-@keyframes slideDown {
-  from { opacity: 0; transform: translateY(-4px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-.popup-player__header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 8px;
-}
-.popup-player__info {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  overflow: hidden;
-  flex: 1;
-}
-.popup-player__title {
-  font-weight: 600;
-  font-size: 13px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--popup-fg);
-}
-.popup-player__meta {
-  font-size: 11px;
-  color: var(--popup-muted);
-}
-.popup-player__actions {
-  flex-shrink: 0;
-}
-.popup-player__tip {
-  font-size: 11px;
-  color: var(--popup-accent);
-  background: var(--popup-bg);
-  border: 1px solid var(--popup-border);
-  border-radius: 4px;
-  padding: 2px 6px;
-}
-.popup-player__controls {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-.popup-player__btn {
-  border: 1px solid var(--popup-border);
-  background: var(--popup-bg);
-  color: var(--popup-fg);
-  border-radius: 4px;
-  padding: 3px 8px;
-  font-size: 11px;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-.popup-player__btn:hover {
-  border-color: var(--popup-accent);
-  color: var(--popup-accent);
-}
-.popup-player__btn--play {
-  font-weight: bold;
-  background: var(--popup-accent);
-  color: #fff;
-  border-color: var(--popup-accent);
-}
-.popup-player__btn--sub {
-  color: var(--popup-muted);
-}
-.popup-player__list {
-  max-height: 140px;
-  overflow-y: auto;
-  border: 1px solid var(--popup-border);
-  border-radius: 4px;
-  background: var(--popup-bg);
-  display: flex;
-  flex-direction: column;
-}
-.popup-player__list-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 4px 8px;
-  font-size: 11px;
-  cursor: pointer;
-  border-bottom: 1px solid var(--popup-border);
-  text-decoration: none;
-  color: var(--popup-fg);
-}
-.popup-player__list-item:last-child {
-  border-bottom: none;
-}
-.popup-player__list-item:hover {
-  background: var(--popup-hover-bg);
-}
-.popup-player__list-item--active {
-  background: var(--popup-hover-bg);
-  color: var(--popup-accent);
-  font-weight: 600;
-}
-.popup-player__list-title {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  flex: 1;
-}
-.popup-player__list-tag {
-  font-size: 10px;
-  color: var(--popup-muted);
-  margin-left: 6px;
-  flex-shrink: 0;
-}
-.popup-player__frame-wrap {
-  position: relative;
-  width: 100%;
-  height: 80px;
-  border-radius: 4px;
-  overflow: hidden;
-  background: #000;
-  margin-top: 4px;
-}
-.popup-player__frame-wrap iframe {
-  width: 100%;
-  height: 100%;
-  border: none;
 }
 
 /* ── 文件夹切换 tabs ─────────────────────────────────── */

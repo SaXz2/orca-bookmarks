@@ -16,10 +16,6 @@ export interface UiState {
   popupWidth?: number;
   popupHeight?: number;
   customFolders?: string[];
-  musicMode?: "order" | "random";
-  musicCurrentIndex?: number;
-  musicIsOpen?: boolean;
-  musicIsPlaying?: boolean;
 }
 
 interface CacheWrapper {
