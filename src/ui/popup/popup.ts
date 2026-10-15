@@ -355,7 +355,23 @@ function renderItem(e: UrlEntry): HTMLElement {
     body.appendChild(tagsWrap);
   }
 
-  a.append(media, body);
+  // 跳转到虎鲸笔记原笔记块的按钮（orca-note://<repoId>/block?blockId=<id>）
+  const noteBtn = document.createElement("button");
+  noteBtn.type = "button";
+  noteBtn.className = "popup-item__action";
+  noteBtn.title = "在虎鲸笔记中打开此条目";
+  noteBtn.setAttribute("aria-label", "在虎鲸笔记中打开此条目");
+  // 虎鲸/笔记小图标
+  noteBtn.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path></svg>`;
+  noteBtn.addEventListener("click", (ev) => {
+    ev.preventDefault();
+    ev.stopPropagation();
+    const noteUri = `orca-note://${e.repoId || "iwy5nfalj9l1y"}/block?blockId=${e.id}`;
+    // 通过 window.location.href 触发注册的协议 Handler，实现本地唤起
+    window.location.href = noteUri;
+  });
+
+  a.append(media, body, noteBtn);
   return a;
 }
 
