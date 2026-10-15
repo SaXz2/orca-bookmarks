@@ -507,8 +507,189 @@ function initResizer(): void {
   });
 }
 
+// ── 音乐播放器模块 ──────────────────────────────────────────
+interface MusicPlayerState {
+  playlist: UrlEntry[];
+  currentIndex: number;
+  isPlaying: boolean;
+  mode: "order" | "random";
+  isOpen: boolean;
+}
+
+const musicState: MusicPlayerState = {
+  playlist: [],
+  currentIndex: 0,
+  isPlaying: false,
+  mode: "order",
+  isOpen: false,
+};
+
+let playTimeoutTimer: number | undefined;
+
+function isMusicEntry(e: UrlEntry): boolean {
+  const hasMusicTag = (e.tags ?? []).some((t) =>
+    /音乐|music|song|bgm|网易云/i.test(t)
+  );
+  const isMusicUrl =
+    /music\.163\.com/i.test(e.url) ||
+    ((e.tags ?? []).some((t) => /音乐|bgm/i.test(t)) &&
+      (/bilibili\.com\/video/i.test(e.url) || /youtube\.com|youtu\.be/i.test(e.url)));
+  return hasMusicTag || isMusicUrl;
+}
+
+function updateMusicPlaylist(): void {
+  musicState.playlist = entries.filter(isMusicEntry);
+}
+
+function getEmbedUrl(entry: UrlEntry): string | null {
+  const url = entry.url;
+  // 1. 网易云音乐
+  // e.g. https://music.163.com/song?id=38358214
+  const ncm = /id=(\d+)/.exec(url);
+  if (/music\.163\.com/i.test(url) && ncm) {
+    return `https://music.163.com/outchain/player?type=2&id=${ncm[1]}&auto=1&height=66`;
+  }
+
+  // 2. 哔哩哔哩
+  // e.g. https://www.bilibili.com/video/BV1k4hQzyERf
+  const bvidM = /(BV[a-zA-Z0-9]+)/i.exec(url);
+  if (/bilibili\.com/i.test(url) && bvidM) {
+    return `https://player.bilibili.com/player.html?bvid=${bvidM[1]}&autoplay=1&muted=0&page=1&high_quality=1`;
+  }
+
+  // 3. YouTube
+  // e.g. https://www.youtube.com/watch?v=HpyVBF03vI8 or youtu.be/HpyVBF03vI8
+  const ytM = /(?:v=|youtu\.be\/|shorts\/)([a-zA-Z0-9_-]{11})/.exec(url);
+  if ((/youtube\.com/i.test(url) || /youtu\.be/i.test(url)) && ytM) {
+    return `https://www.youtube.com/embed/${ytM[1]}?autoplay=1&rel=0`;
+  }
+
+  return null;
+}
+
+function playTrack(index: number): void {
+  if (!musicState.playlist.length) {
+    el("player-title").textContent = "未找到带「音乐」标签的网址条目";
+    el("player-meta").textContent = "0/0";
+    return;
+  }
+
+  if (index < 0) index = musicState.playlist.length - 1;
+  if (index >= musicState.playlist.length) index = 0;
+
+  musicState.currentIndex = index;
+  musicState.isPlaying = true;
+
+  const cur = musicState.playlist[index];
+  el("player-title").textContent = cur.title || cur.url;
+  el("player-title").title = cur.title || cur.url;
+  el("player-meta").textContent = `${index + 1} / ${musicState.playlist.length}`;
+  el("player-play").textContent = "⏸";
+
+  const wrap = el("player-frame-wrap");
+  wrap.textContent = "";
+
+  const embedUrl = getEmbedUrl(cur);
+  if (!embedUrl) {
+    console.warn("[music] 无法解析播放地址，尝试下一首：", cur.url);
+    // 自动跳到下一首
+    window.setTimeout(() => nextTrack(), 500);
+    return;
+  }
+
+  const iframe = document.createElement("iframe");
+  iframe.src = embedUrl;
+  iframe.allow = "autoplay; encrypted-media; picture-in-picture";
+  iframe.title = cur.title;
+
+  // 网络超时跳过机制：针对某些可能打不开的海外 YouTube 或损坏链接，10秒未响应或加载失败自动跳过
+  window.clearTimeout(playTimeoutTimer);
+  let hasLoaded = false;
+  iframe.onload = () => {
+    hasLoaded = true;
+  };
+  iframe.onerror = () => {
+    console.warn("[music] 播放遇到故障，自动跳过此曲：", cur.url);
+    nextTrack();
+  };
+
+  playTimeoutTimer = window.setTimeout(() => {
+    // 若特定网络环境下完全无法加载该 iframe
+    if (!hasLoaded && /youtube/i.test(embedUrl)) {
+      console.warn("[music] YouTube 链接加载响应过慢/无法访问，自动跳过：", cur.url);
+      nextTrack();
+    }
+  }, 9000);
+
+  wrap.appendChild(iframe);
+}
+
+function nextTrack(): void {
+  if (!musicState.playlist.length) return;
+  if (musicState.mode === "random") {
+    let nextIdx = Math.floor(Math.random() * musicState.playlist.length);
+    if (musicState.playlist.length > 1 && nextIdx === musicState.currentIndex) {
+      nextIdx = (nextIdx + 1) % musicState.playlist.length;
+    }
+    playTrack(nextIdx);
+  } else {
+    playTrack((musicState.currentIndex + 1) % musicState.playlist.length);
+  }
+}
+
+function prevTrack(): void {
+  if (!musicState.playlist.length) return;
+  playTrack((musicState.currentIndex - 1 + musicState.playlist.length) % musicState.playlist.length);
+}
+
+function initMusicPlayer(): void {
+  const toggleBtn = el<HTMLButtonElement>("music-player-toggle");
+  const playerSection = el("music-player");
+
+  toggleBtn.addEventListener("click", () => {
+    musicState.isOpen = !musicState.isOpen;
+    playerSection.style.display = musicState.isOpen ? "flex" : "none";
+    toggleBtn.classList.toggle("popup-header__music-btn--active", musicState.isOpen);
+    if (musicState.isOpen) {
+      updateMusicPlaylist();
+      if (!musicState.isPlaying && musicState.playlist.length > 0) {
+        playTrack(musicState.currentIndex);
+      }
+    }
+  });
+
+  el("player-mode").addEventListener("click", () => {
+    musicState.mode = musicState.mode === "order" ? "random" : "order";
+    el("player-mode").textContent = musicState.mode === "order" ? "🔁 顺序" : "🔀 随机";
+  });
+
+  el("player-play").addEventListener("click", () => {
+    if (musicState.isPlaying) {
+      // 暂停
+      musicState.isPlaying = false;
+      el("player-play").textContent = "▶";
+      el("player-frame-wrap").textContent = "";
+      window.clearTimeout(playTimeoutTimer);
+    } else {
+      updateMusicPlaylist();
+      playTrack(musicState.currentIndex);
+    }
+  });
+
+  el("player-next").addEventListener("click", () => {
+    updateMusicPlaylist();
+    nextTrack();
+  });
+
+  el("player-prev").addEventListener("click", () => {
+    updateMusicPlaylist();
+    prevTrack();
+  });
+}
+
 function boot(): void {
   initResizer();
+  initMusicPlayer();
 
   let searchTimer: number | undefined;
   el<HTMLInputElement>("search").addEventListener("input", (ev) => {

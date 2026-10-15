@@ -19,6 +19,7 @@ const TARGET_TAGS = [
   { name: "网址", tagId: 43 },
   { name: "哔哩哔哩", tagId: 6560 },
   { name: "Youtube", tagId: 7659 },
+  { name: "音乐", tagId: 2938 },
 ] as const;
 
 const BATCH_SIZE = 150;

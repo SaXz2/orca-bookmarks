@@ -342,10 +342,65 @@ export function extractTags(text: string): string[] {
 }
 
 /**
+ * 清除文本中的 Markdown 链接语法 [title](url) 包括嵌套中括号结构，
+ * 保留链接前后的实际文本内容。
+ */
+export function removeMarkdownLinks(text: string): string {
+  let s = text;
+  const linkPattern = /\]\(https?:\/\/[^)\s]+\)/;
+  while (true) {
+    const m = linkPattern.exec(s);
+    if (!m) break;
+    const closeBracketIdx = m.index;
+    let depth = 1;
+    let openBracketIdx = -1;
+    for (let i = closeBracketIdx - 1; i >= 0; i--) {
+      if (s[i] === "]") depth++;
+      else if (s[i] === "[") {
+        depth--;
+        if (depth === 0) {
+          openBracketIdx = i;
+          break;
+        }
+      }
+    }
+    if (openBracketIdx !== -1) {
+      const endIdx = m.index + m[0].length;
+      s = s.slice(0, openBracketIdx) + " " + s.slice(endIdx);
+    } else {
+      s = s.slice(0, closeBracketIdx) + " " + s.slice(m.index + m[0].length);
+    }
+  }
+  return s;
+}
+
+/**
+ * 清理笔记或文本中的链接、图片、标签及属性，返回纯文字说明
+ */
+export function cleanNoteText(text: string): string {
+  let clean = removeMarkdownLinks(text);
+  // 移除图片/海报语法
+  clean = clean.replace(/!\[[^\]]*\]\([^)]+\)/g, "");
+  // 移除裸 URL
+  clean = clean.replace(/https?:\/\/[^\s),，;；"]+/g, "");
+  // 移除标签 #xxx
+  clean = clean.replace(/#[^\s,#，]+/g, "");
+  // 移除 key: value; 属性定义
+  clean = clean.replace(/[a-zA-Z0-9_\u4e00-\u9fa5]+:\s*[^;\n]+;?/g, "");
+  // 移除孤立方括号
+  clean = clean.replace(/[\[\]]/g, "");
+  // 压缩空白
+  clean = clean.replace(/[,，;；\s]+/g, " ").trim();
+  return clean;
+}
+
+/**
  * 从块及其子节点中提取实质性笔记摘要/总结说明：
- * 1. 优先提取子节点的 AI 总结、学习笔记段落；
- * 2. 次优先提取属性中的 description；
- * 3. 再次提取笔记在链接之外撰写的手写备注说明（过滤掉链接、标签与基础属性）。
+ * 规则：
+ * 1. 优先提取子节点（子块）的手写笔记、评语或 AI 总结段落；
+ * 2. 次优先提取当前块在网址链接之外手写追加的备注内容；
+ * 3. 严格跳过视频块（如 bilibili/youtube 等嵌入播放器链接块）与纯图片块；
+ * 4. 只有当实际存在有意义的笔记文字时才返回；如果仅仅是单独一行链接则不返回无意义的空白摘要。
  */
 export function extractNoteSnippet(blocks: RawBlock[], mainBlockId: number): string | undefined {
   // 1. 优先看子块（除主块以外的块）
@@ -353,49 +408,23 @@ export function extractNoteSnippet(blocks: RawBlock[], mainBlockId: number): str
   for (const b of childBlocks) {
     const txt = (b.text ?? "").trim();
     if (!txt || txt === "...") continue;
+    // 过滤纯图片块
     if (/^\s*(?:image|img|海报):/i.test(txt)) continue;
+    // 过滤嵌入视频块
+    if (/bilibili\.com\/video|youtube\.com\/watch|youtu\.be/i.test(txt)) continue;
 
-    // 识别长文本段落（如 AI 视频总结、随笔记录）
-    if (txt.includes("视频总结") || txt.length >= 25) {
-      let clean = txt
-        .replace(/视频总结/g, "")
-        .replace(/#AI Result/gi, "")
-        .replace(/https?:\/\/[^\s),，;；"]+/g, "")
-        .replace(/#([^\s,#，]+)/g, "")
-        .replace(/\[+[^\]]*\]+/g, "")
-        .replace(/[,，;；\s]+/g, " ")
-        .trim();
-
-      if (clean.length >= 15) {
-        return clean.length > 120 ? `${clean.slice(0, 120)}…` : clean;
-      }
+    const clean = cleanNoteText(txt);
+    if (clean && clean.length >= 4 && !clean.toLowerCase().startsWith("image:")) {
+      return clean.length > 120 ? `${clean.slice(0, 120)}…` : clean;
     }
   }
 
-  // 2. 检查主块是否有 description 属性
+  // 2. 检查主块是否有除链接之外的手写备注说明
   const mainB = blocks.find((b) => b.id === mainBlockId) ?? blocks[0];
   if (mainB) {
     const txt = mainB.text ?? "";
-    const descM = /description:\s*([^;\n]+)/i.exec(txt);
-    if (descM) {
-      const desc = descM[1].trim();
-      if (desc.length >= 6) {
-        return desc.length > 120 ? `${desc.slice(0, 120)}…` : desc;
-      }
-    }
-
-    // 3. 提取除链接外手写说明
-    let clean = txt
-      .replace(/\]\([^\)]+\)/g, "")
-      .replace(/\(https?:\/\/[^\)]+\)/g, "")
-      .replace(/\[+[^\]]*\]+/g, "")
-      .replace(/https?:\/\/[^\s),，;；"]+/g, "")
-      .replace(/#([^\s,#，]+)/g, "")
-      .replace(/[a-zA-Z0-9_\u4e00-\u9fa5]+:\s*[^;\n]+;?/g, "")
-      .replace(/[,，;；\s]+/g, " ")
-      .trim();
-
-    if (clean && clean.length >= 4 && !clean.toLowerCase().startsWith("image:")) {
+    const clean = cleanNoteText(txt);
+    if (clean && clean.length >= 2 && !clean.toLowerCase().startsWith("image:")) {
       return clean.length > 120 ? `${clean.slice(0, 120)}…` : clean;
     }
   }

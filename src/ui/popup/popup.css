@@ -109,21 +109,106 @@ body {
   border-color: transparent;
 }
 
-.popup-header__options-link {
+.popup-header__options-link,
+.popup-header__music-btn {
   flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
   width: 32px;
+  height: 32px;
   border: 1px solid var(--popup-border);
   border-radius: var(--popup-radius);
+  background: transparent;
   color: var(--popup-muted);
   text-decoration: none;
   font-size: 15px;
+  cursor: pointer;
+  transition: all 0.15s ease;
 }
-.popup-header__options-link:hover {
+.popup-header__options-link:hover,
+.popup-header__music-btn:hover {
   background: var(--popup-hover-bg);
   color: var(--popup-fg);
+  border-color: var(--popup-accent);
+}
+.popup-header__music-btn--active {
+  background: var(--popup-accent);
+  color: #fff;
+  border-color: var(--popup-accent);
+}
+
+/* ── 音乐播放器小面板 ───────────────────────────────── */
+.popup-player {
+  background: var(--popup-hover-bg);
+  border-bottom: 1px solid var(--popup-border);
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  animation: slideDown 0.2s ease;
+}
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.popup-player__info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+.popup-player__title {
+  font-weight: 500;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+.popup-player__meta {
+  font-size: 11px;
+  color: var(--popup-muted);
+  flex-shrink: 0;
+}
+.popup-player__controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.popup-player__btn {
+  border: 1px solid var(--popup-border);
+  background: var(--popup-bg);
+  color: var(--popup-fg);
+  border-radius: 4px;
+  padding: 3px 8px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.popup-player__btn:hover {
+  border-color: var(--popup-accent);
+  color: var(--popup-accent);
+}
+.popup-player__btn--play {
+  font-weight: bold;
+  background: var(--popup-accent);
+  color: #fff;
+  border-color: var(--popup-accent);
+}
+.popup-player__frame-wrap {
+  position: relative;
+  width: 100%;
+  height: 80px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: #000;
+  margin-top: 2px;
+}
+.popup-player__frame-wrap iframe {
+  width: 100%;
+  height: 100%;
+  border: none;
 }
 
 /* ── 文件夹切换 tabs ─────────────────────────────────── */
