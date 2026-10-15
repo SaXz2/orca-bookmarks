@@ -547,6 +547,7 @@ interface MusicPlayerState {
   mode: "order" | "random";
   isOpen: boolean;
   isListOpen: boolean;
+  bgMode: "popup" | "offscreen";
 }
 
 const musicState: MusicPlayerState = {
@@ -556,6 +557,7 @@ const musicState: MusicPlayerState = {
   mode: "order",
   isOpen: false,
   isListOpen: false,
+  bgMode: "popup",
 };
 
 let playTimeoutTimer: number | undefined;
@@ -681,12 +683,22 @@ function playTrack(index: number): void {
     return;
   }
 
-  // 通知后台 Offscreen 音频宿主播放，关闭弹窗不中断且不产生任何额外页面
-  void chrome.runtime.sendMessage({ type: "orca:music:ensure-offscreen" }, () => {
-    chrome.runtime.sendMessage({ type: "orca:music:play", embedUrl }, () => {
-      // 成功发送播放指令
+  const wrap = el("player-frame-wrap");
+  wrap.textContent = "";
+
+  if (musicState.bgMode === "popup") {
+    // 弹窗内置播放：直接在弹窗内挂载 iframe，完全享有交互权限，绝无静音限制
+    const iframe = document.createElement("iframe");
+    iframe.src = embedUrl;
+    iframe.allow = "autoplay; encrypted-media; picture-in-picture";
+    iframe.title = cur.title;
+    wrap.appendChild(iframe);
+  } else {
+    // 后台常驻模式：通知 offscreen 宿主播放
+    void chrome.runtime.sendMessage({ type: "orca:music:ensure-offscreen" }, () => {
+      chrome.runtime.sendMessage({ type: "orca:music:play", embedUrl });
     });
-  });
+  }
 
   window.clearTimeout(playTimeoutTimer);
   // 针对某些网络环境下 YouTube 9秒未连上自动下一首
@@ -703,6 +715,7 @@ function playTrack(index: number): void {
 function stopTrack(): void {
   musicState.isPlaying = false;
   el("player-play").textContent = "▶";
+  el("player-frame-wrap").textContent = "";
   window.clearTimeout(playTimeoutTimer);
   chrome.runtime.sendMessage({ type: "orca:music:stop" });
   void saveUiState({ musicIsPlaying: false });
@@ -776,6 +789,17 @@ function initMusicPlayer(): void {
       renderPlaylistView();
     }
   });
+
+  const bgModeBtn = document.getElementById("player-bg-mode-btn");
+  if (bgModeBtn) {
+    bgModeBtn.addEventListener("click", () => {
+      musicState.bgMode = musicState.bgMode === "popup" ? "offscreen" : "popup";
+      bgModeBtn.textContent = musicState.bgMode === "popup" ? "🎵 模式: 弹窗内置" : "🎧 模式: 后台常驻";
+      if (musicState.isPlaying) {
+        playTrack(musicState.currentIndex);
+      }
+    });
+  }
 }
 
 function boot(): void {

@@ -263,10 +263,11 @@ body {
 .popup-player__frame-wrap {
   position: relative;
   width: 100%;
-  height: 0;
-  opacity: 0.01;
-  pointer-events: none;
+  height: 80px;
+  border-radius: 4px;
   overflow: hidden;
+  background: #000;
+  margin-top: 4px;
 }
 .popup-player__frame-wrap iframe {
   width: 100%;
